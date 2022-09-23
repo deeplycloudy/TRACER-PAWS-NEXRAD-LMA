@@ -1,4 +1,4 @@
-# TRACER-NEXRAD-LMA-PAWS
+# TRACER-PAWS-NEXRAD-LMA
 
 Processing and analysis workflow scripts (PAWS) for gridding and tracking NEXRAD data and combining with flash-level LMA data.
 
