@@ -1,0 +1,25 @@
+name: tracer_env
+channels:
+- conda-forge
+- defaults
+dependencies:
+- arm_pyart=1.13.0
+- tobac=1.3.3
+- hdf5
+- netcdf4
+- numpy
+- pandas
+- pip
+- python=3.7
+- scipy
+- xarray
+- pyproj
+- scikit-learn
+- boto
+- pip:
+  - git+https://github.com/deeplycloudy/xlma-python.git@cf-lma-format
+  - git+https://github.com/deeplycloudy/lmatools.git
+  - git+https://github.com/deeplycloudy/lmalib-tracer.git
+  - git+https://github.com/CSU-Radarmet/CSU_RadarTools.git
+  - git+https://github.com/nasa/DualPol.git
+  - git+https://github.com/tjlang/SkewT.git
