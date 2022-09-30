@@ -17,7 +17,7 @@ dependencies:
 - scikit-learn
 - boto
 - pip:
-  - git+https://github.com/deeplycloudy/xlma-python.git@cf-lma-format
+  - git+https://github.com/deeplycloudy/xlma-python.git@interactive
   - git+https://github.com/deeplycloudy/lmatools.git
   - git+https://github.com/deeplycloudy/lmalib-tracer.git
   - git+https://github.com/CSU-Radarmet/CSU_RadarTools.git
