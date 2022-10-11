@@ -32,10 +32,10 @@ def create_parser():
     parser.add_argument('--site', metavar='site', required=True,
                         dest='site', action='store',
                         help='NEXRAD site code, e.g., khgx')
-    parser.add_argument('--threshold', metavar='dbz', required=True,
+    parser.add_argument('--threshold', metavar='dbz', required=True,type=float,
                         dest='track_threshold', action='store',
                         help='Tracking/Feature threshold in dbz, e.g., 15')
-    parser.add_argument('--speed', metavar='value', required=True,
+    parser.add_argument('--speed', metavar='value', required=True,type=float,
                         dest='track_speed', action='store',
                         help='Tracking speed, e.g., 1.0')
     return parser
@@ -60,7 +60,9 @@ from pandas.core.common import flatten
 # get_ipython().run_line_magic("matplotlib", "inline")
 # %matplotlib widget
 import tobac
-from tobac.merge_split import merge_split_cells
+from merge_split import merge_split_cells
+from utils import standardize_track_dataset
+from utils import compress_all
 
 # Disable a couple of warnings:
 import warnings
@@ -607,12 +609,12 @@ if __name__ == '__main__':
 
     d = merge_split_cells(Track,500., distance=15000.0)  # , dxy = dxy)
     Track = xarray.open_dataset(savedir + "/Track.nc")
-    ds = tobac.utils.standardize_track_dataset(Track, refl_mask)
+    ds = standardize_track_dataset(Track, refl_mask)
     both_ds = xarray.merge([ds, d], compat="override")
-    both_ds = tobac.utils.compress_all(both_ds)
+    both_ds = compress_all(both_ds)
     both_ds.to_netcdf(os.path.join(savedir, "Track_features_merges.nc"))
  
-    nc_grid = load_cfradial_grids(args.path)
+    nc_grid = load_cfradial_grids(args.path+"*grid.nc")
     for i in range(len(nc_grid.time)):
         time_index = i
         fig = plt.figure(figsize=(9, 9))
