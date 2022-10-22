@@ -78,7 +78,6 @@ def rot_mat_lma(radar_file, lma_points, direction):
         ang_cart = direction*ang_cart
 
     r = Rotation.from_rotvec([0, 0, ang_cart]) # - Counter clock wise direction
-    r.as_dcm()
 
     rot_pts = r.apply(lma_points) # - (N,3)
 
