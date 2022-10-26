@@ -12,7 +12,7 @@ def close_sources(R, Z, lma_file_orthogonal, delta):
     This function locates the point within a delta distance to the x-axis (min y) in the RHI scan (distance from radar R and height above radar Z).
     """
     a = lma_file_orthogonal[np.where(abs(lma_file_orthogonal[:,1]) < delta)]
-    print('y-dist =', a[:,1])
+    # print('y-dist =', a[:,1])
     for i in np.arange(a[:,0].size):
         if a[i, 0] < 0: # not in the scan
             print('x-dist =', a[i,0])
