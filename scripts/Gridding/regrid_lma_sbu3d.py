@@ -272,7 +272,6 @@ if __name__ == '__main__':
 
     ds = ds.drop_dims(existing_grid_dims).load()
 
-
     bin_increment = np.timedelta64(subdivide_sec, 's')
     hourly_bins = np.arange(lma_start, lma_end, bin_increment)
     # print(hourly_bins)
@@ -292,7 +291,9 @@ if __name__ == '__main__':
     # Index manually to work around the fact that intervals without data are
     # dropped when looping over the groupby (len(hourly_flash_groups) <= len(hourly_bin_labels))
     for hourly_index in hourly_bin_labels:
-        time_range = (hourly_index[0], hourly_index[1], grid_dt)
+        # As usual with arange, add one second to make sure we get a full final bin
+        one_second = np.timedelta64(1,'s')
+        time_range = (hourly_index[0], hourly_index[1]+one_second, grid_dt)
         print("Grid time specs: ", time_range)
         try:
             flash_subset = hourly_flash_groups[hourly_index]#.load()
