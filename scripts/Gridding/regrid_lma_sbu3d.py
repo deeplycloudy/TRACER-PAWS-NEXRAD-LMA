@@ -291,7 +291,7 @@ if __name__ == '__main__':
 
     # Index manually to work around the fact that intervals without data are
     # dropped when looping over the groupby (len(hourly_flash_groups) <= len(hourly_bin_labels))
-    for hourly_index in hourly_bin_labels[:4]:
+    for hourly_index in hourly_bin_labels:
         time_range = (hourly_index[0], hourly_index[1], grid_dt)
         print("Grid time specs: ", time_range)
         try:
