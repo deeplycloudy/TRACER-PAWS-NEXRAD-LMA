@@ -8,9 +8,9 @@
 """
 
 
-def merge_split_cells(TRACK, dxy, distance=25000, frame_len=5):
+def merge_split_MEST(TRACK, dxy, distance=None, frame_len=5):
     """
-    function to  postprocess tobac track data for merge/split cells
+    function to  postprocess tobac track data for merge/split cells using a minimum euclidian spanning tree
 
 
     Parameters
@@ -25,7 +25,8 @@ def merge_split_cells(TRACK, dxy, distance=25000, frame_len=5):
 
     distance : float, optional
         Distance threshold determining how close two features must be in order to consider merge/splitting.
-        Default is 25000 meters.
+        Default is 25x the x/y grid spacing of the data, given in dxy.
+        The distance should be in units of meters.
 
     frame_len : float, optional
         Threshold for the maximum number of frames that can separate the end of cell and the start of a related cell.
@@ -46,14 +47,13 @@ def merge_split_cells(TRACK, dxy, distance=25000, frame_len=5):
 
 
     Example usage:
-        d = merge_split(Track)
+        d = merge_split_MEST(Track)
         ds = tobac.utils.standardize_track_dataset(Track, refl_mask)
         both_ds = xr.merge([ds, d],compat ='override')
         both_ds = tobac.utils.compress_all(both_ds)
         both_ds.to_netcdf(os.path.join(savedir,'Track_features_merges.nc'))
 
     """
-
     try:
         import networkx as nx
     except ImportError:
@@ -71,6 +71,9 @@ def merge_split_cells(TRACK, dxy, distance=25000, frame_len=5):
     first = track_groups.first()
     last = track_groups.last()
 
+    if distance is None:
+        distance = dxy * 25.0
+
     a_names = list()
     b_names = list()
     dist = list()
@@ -84,7 +87,6 @@ def merge_split_cells(TRACK, dxy, distance=25000, frame_len=5):
     b_xy = np.zeros((l, 2))
     b_xy[:, 0] = first["hdim_2"].values * dxy
     b_xy[:, 1] = first["hdim_1"].values * dxy
-
     # Use cdist to find distance matrix
     out = cdist(a_xy, b_xy)
     # Find all cells under the distance threshold
@@ -134,7 +136,7 @@ def merge_split_cells(TRACK, dxy, distance=25000, frame_len=5):
                 temp1 = list(np.unique(new_tree_arr[k[0]]))
                 temp = list(np.unique(new_tree_arr[k[0]]))
 
-                for l in range(15):
+                for l in range(len(cell_id)):
                     for i in temp1:
                         k2 = np.where(new_tree_arr == i)
                         temp.append(list(np.unique(new_tree_arr[k2[0]]).squeeze()))
@@ -158,16 +160,13 @@ def merge_split_cells(TRACK, dxy, distance=25000, frame_len=5):
     cell_id = list(np.unique(TRACK.cell.values.astype(int)))
     logging.debug("found cell ids")
 
-    cell_parent_track_id = []
+    cell_parent_track_id = np.zeros(len(cell_id))
+    cell_parent_track_id[:] = -1
 
-    for i, id in enumerate(track_id, start=-1):
-        if len(track_id[int(id)]) == 1:
-            cell_parent_track_id.append(int(i))
+    for i, id in enumerate(track_id, start=0):
+        for j in track_id[int(id)]:
+            cell_parent_track_id[cell_id.index(j)] = int(i)
 
-        else:
-            cell_parent_track_id.append(np.repeat(int(i), len(track_id[int(id)])))
-
-    cell_parent_track_id = list(flatten(cell_parent_track_id))
     logging.debug("found cell parent track ids")
 
     track_ids = np.array(np.unique(cell_parent_track_id))
@@ -176,7 +175,7 @@ def merge_split_cells(TRACK, dxy, distance=25000, frame_len=5):
     feature_parent_cell_id = list(TRACK.cell.values.astype(int))
     logging.debug("found feature parent cell ids")
 
-    # This version includes all the feature regardless of if they are used in cells or not.
+    #     # This version includes all the feature regardless of if they are used in cells or not.
     feature_id = list(TRACK.feature.values.astype(int))
     logging.debug("found feature ids")
 
@@ -187,26 +186,21 @@ def merge_split_cells(TRACK, dxy, distance=25000, frame_len=5):
         if cellid < 0:
             feature_parent_track_id[i] = -1
         else:
-            j = np.where(cell_id == cellid)
-            j = np.squeeze(j)
-            trackid = cell_parent_track_id[j]
-            feature_parent_track_id[i] = trackid
+            feature_parent_track_id[i] = cell_parent_track_id[cell_id.index(cellid)]
 
-    logging.debug("found feature parent track ids")
-
-    track_child_cell_count = []
+    track_child_cell_count = np.zeros(len(track_id))
     for i, id in enumerate(track_id):
-        track_child_cell_count.append(len(track_id[int(id)]))
+        track_child_cell_count[i] = len(np.where(cell_parent_track_id == i)[0])
     logging.debug("found track child cell count")
 
-    cell_child_feature_count = []
+    cell_child_feature_count = np.zeros(len(cell_id))
     for i, id in enumerate(cell_id):
-        cell_child_feature_count.append(len(track_groups[id].feature.values))
+        cell_child_feature_count[i] = len(track_groups[id].feature.values)
     logging.debug("found cell child feature count")
 
-    track_dim = "tracks"
-    cell_dim = "cells"
-    feature_dim = "features"
+    track_dim = "track"
+    cell_dim = "cell"
+    feature_dim = "feature"
 
     d = xr.Dataset(
         {
@@ -223,9 +217,9 @@ def merge_split_cells(TRACK, dxy, distance=25000, frame_len=5):
 
     d = d.set_coords(["feature", "cell", "track"])
 
-    assert len(cell_id) == len(cell_parent_track_id)
-    assert len(feature_id) == len(feature_parent_cell_id)
-    assert sum(track_child_cell_count) == len(cell_id)
-    assert sum(cell_child_feature_count) == len(feature_id)
+    #     assert len(cell_id) == len(cell_parent_track_id)
+    #     assert len(feature_id) == len(feature_parent_cell_id)
+    #     assert sum(track_child_cell_count) == len(cell_id)
+    #     assert sum(cell_child_feature_count) == len(feature_id)
 
     return d

@@ -60,7 +60,7 @@ from pandas.core.common import flatten
 # get_ipython().run_line_magic("matplotlib", "inline")
 # %matplotlib widget
 import tobac
-from merge_split import merge_split_cells
+from merge_split import merge_split_MEST
 from utils import standardize_track_dataset
 from utils import compress_all
 
@@ -460,11 +460,24 @@ if __name__ == '__main__':
     parser = create_parser()
     args = parser.parse_args()
     
-    data = xarray.open_mfdataset(args.path+"*grid.nc", engine="netcdf4")
-    data["time"].encoding["units"] = "seconds since 2000-01-01 00:00:00"
-    rho = 0.90
-    ref = 10
-    maxrefl = qc_reflectivity2(data, rho, ref=ref)
+# <<<<<<< Updated upstream
+#     data = xarray.open_mfdataset(args.path+"*grid.nc", engine="netcdf4")
+#     data["time"].encoding["units"] = "seconds since 2000-01-01 00:00:00"
+#     rho = 0.90
+#     ref = 10
+#     maxrefl = qc_reflectivity2(data, rho, ref=ref)
+# =======
+    data = xarray.open_mfdataset(args.path+"*_grid.nc", engine="netcdf4")
+    data['time'].encoding['units']="seconds since 2000-01-01 00:00:00"
+    bad_rhv = data["cross_correlation_ratio"] < 0.9
+    bad_refl = data["reflectivity"] < 10
+    bad=bad_rhv & bad_refl
+    maxrefl = data["reflectivity"].where(~bad, np.nan).max(axis=1)
+#     data["time"].encoding["units"] = "seconds since 2000-01-01 00:00:00"
+#     rho = 0.90
+#     ref = 10
+#     maxrefl = qc_reflectivity2(data, rho, ref=ref)
+# >>>>>>> Stashed changes
 
 
     ts = pd.to_datetime(data['time'][0].values)
@@ -607,7 +620,11 @@ if __name__ == '__main__':
     refl_mask = xarray.open_dataset(savedir + "/Mask_Segmentation_refl.nc")
     refl_features = xarray.open_dataset(savedir + "/Features_Precip.nc")
 
-    d = merge_split_cells(Track,500., distance=15000.0)  # , dxy = dxy)
+# <<<<<<< Updated upstream
+# =======
+    print("starting merge_split")
+# >>>>>>> Stashed changes
+    d = merge_split_MEST(Track,500., distance=15000.0)  # , dxy = dxy)
     Track = xarray.open_dataset(savedir + "/Track.nc")
     ds = standardize_track_dataset(Track, refl_mask)
     both_ds = xarray.merge([ds, d], compat="override")
