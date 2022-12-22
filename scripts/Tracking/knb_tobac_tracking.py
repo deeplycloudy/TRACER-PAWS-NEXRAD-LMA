@@ -14,8 +14,8 @@ Site is a string NEXRAD location
 
 Example
 =======
-python knb_tobac_tracking.py --path="/Users/kelcy/DATA/20220604/" 
-    --threshold=15 --speed=1.0 --site='KHGX'
+python knb_tobac_tracking.py --path="/archive/TRACER_processing/JUNE/20220602/" --threshold=15 --speed=1.0 --site=KHGX --type=NEXRAD" 
+
 
 
 """
@@ -38,6 +38,9 @@ def create_parser():
     parser.add_argument('--speed', metavar='value', required=True,type=float,
                         dest='track_speed', action='store',
                         help='Tracking speed, e.g., 1.0')
+    parser.add_argument('--type', metavar='data type', required=True,
+                        dest='data_type', action='store',
+                        help='Datat name type, e.g., NEXRAD, POLARRIS, NUWRF')
     return parser
 
 # End parsing #
@@ -60,9 +63,9 @@ from pandas.core.common import flatten
 # get_ipython().run_line_magic("matplotlib", "inline")
 # %matplotlib widget
 import tobac
-from merge_split import merge_split_MEST
-from utils import standardize_track_dataset
-from utils import compress_all
+from tobac.merge_split import merge_split_MEST
+from tobac.utils import standardize_track_dataset
+from tobac.utils import compress_all
 
 # Disable a couple of warnings:
 import warnings
@@ -71,18 +74,6 @@ warnings.filterwarnings("ignore", category=UserWarning, append=True)
 warnings.filterwarnings("ignore", category=RuntimeWarning, append=True)
 warnings.filterwarnings("ignore", category=FutureWarning, append=True)
 warnings.filterwarnings("ignore", category=pd.io.pytables.PerformanceWarning)
-
-
-def qc_reflectivity2(dataset, rhv, ref=None):
-    for i in range(len(dataset["time"])):
-        refl = np.array(dataset["reflectivity"][i, :, :, :])
-        refl[np.array(dataset["cross_correlation_ratio"][i, :, :, :]) < rhv] = -999  # 0
-        if ref:
-            refl[refl < ref] = np.nan  # -999 #0
-        dataset["reflectivity"][i, :, :, :] = refl
-        max_refl = dataset["reflectivity"].max(axis=1, skipna=True)
-
-    return max_refl
 
 
 
@@ -271,6 +262,12 @@ def load_cfradial_grids(file_list):
     ds = add_lat_lon_grid(ds)
 
     return ds
+    
+def load_cfradial_grids_polarris(ds_data):
+
+    ds = add_lat_lon_grid(ds_data)
+
+    return ds
 
 
 
@@ -305,7 +302,8 @@ def plot(t_index, xrdata, max_refl, ncgrid, dbz, ind=None):
     nclons = ncgrid["point_longitude"][0, :, :].data
     nclats = ncgrid["point_latitude"][0, :, :].data
 
-    fname = "/Users/kelcy/Downloads/10m_cultural/10m_cultural/ne_10m_admin_1_states_provinces_lines.shp"
+    fname = "shapefiles/ne_10m_admin_1_states_provinces_lines.shp"
+#     fname = "ne_10m_admin_1_states_provinces_lines.shp"
     # Plot
     # fig.clear()
     latlon_proj = ccrs.PlateCarree()
@@ -333,9 +331,7 @@ def plot(t_index, xrdata, max_refl, ncgrid, dbz, ind=None):
     )  # note the empty label_mode
     for ax in axs:
         ax.coastlines()
-        shape_feature = ShapelyFeature(
-            Reader(fname).geometries(), ccrs.PlateCarree(), edgecolor="black"
-        )
+        shape_feature = ShapelyFeature(Reader(fname).geometries(), ccrs.PlateCarree(), edgecolor="black")
         ax.add_feature(shape_feature, facecolor="none")
         ax.add_feature(cartopy.feature.STATES, edgecolor="black")
         ax.set_extent(
@@ -433,23 +429,23 @@ def plot(t_index, xrdata, max_refl, ncgrid, dbz, ind=None):
         else:
             continue
 
-#     for i in xrdata['track']:
-#         track_i = np.where(xrdata['cell_parent_track_id'] == i.values)
-#         for cell in xrdata['cell'][track_i]:
-#             if cell < 0:
-#                 continue
-#     
-#             feature_id = np.where(xrdata['feature_parent_cell_id'] == cell)
-#             if (np.nanmax(xrdata['feature_time_index'][feature_id]) >= t_index) and (np.nanmin(xrdata['feature_time_index'][feature_id]) <= t_index):
-#                 axs[0].plot(ncgrid['point_longitude'].data[0,np.round(xrdata['feature_hdim1_coordinate'].data[feature_id]).astype(int),np.round(xrdata['feature_hdim2_coordinate'].data[feature_id]).astype(int)],
-#                             ncgrid['point_latitude'].data[0,np.round(xrdata['feature_hdim1_coordinate'].data[feature_id]).astype(int),np.round(xrdata['feature_hdim2_coordinate'].data[feature_id]).astype(int)],
-#                             '-.',color = 'b',markersize = 1,transform = latlon_proj)
-#     
-#                 axs[0].text(ncgrid['point_longitude'].data[0,np.round(both_ds['feature_hdim1_coordinate'].data[feature_id][-1]).astype(int),np.round(both_ds['feature_hdim2_coordinate'].data[feature_id][-1]).astype(int)],
-#                             ncgrid['point_latitude'].data[0,np.round(both_ds['feature_hdim1_coordinate'].data[feature_id][-1]).astype(int),np.round(both_ds['feature_hdim2_coordinate'].data[feature_id][-1]).astype(int)],
-#                             f'{int(i)}', fontsize = 'small',rotation = 'vertical',transform = latlon_proj)
-#             else:
-#                 continue
+    for i in xrdata['track']:
+        track_i = np.where(xrdata['cell_parent_track_id'] == i.values)
+        for cell in xrdata['cell'][track_i]:
+            if cell < 0:
+                continue
+    
+            feature_id = np.where(xrdata['feature_parent_cell_id'] == cell)
+            if (np.nanmax(xrdata['feature_time_index'][feature_id]) >= t_index) and (np.nanmin(xrdata['feature_time_index'][feature_id]) <= t_index):
+                axs[0].plot(ncgrid['point_longitude'].data[0,np.round(xrdata['feature_hdim1_coordinate'].data[feature_id]).astype(int),np.round(xrdata['feature_hdim2_coordinate'].data[feature_id]).astype(int)],
+                            ncgrid['point_latitude'].data[0,np.round(xrdata['feature_hdim1_coordinate'].data[feature_id]).astype(int),np.round(xrdata['feature_hdim2_coordinate'].data[feature_id]).astype(int)],
+                            '-.',color = 'b',markersize = 1,transform = latlon_proj)
+    
+                axs[0].text(ncgrid['point_longitude'].data[0,np.round(both_ds['feature_hdim1_coordinate'].data[feature_id][-1]).astype(int),np.round(both_ds['feature_hdim2_coordinate'].data[feature_id][-1]).astype(int)],
+                            ncgrid['point_latitude'].data[0,np.round(both_ds['feature_hdim1_coordinate'].data[feature_id][-1]).astype(int),np.round(both_ds['feature_hdim2_coordinate'].data[feature_id][-1]).astype(int)],
+                            f'{int(i)}', fontsize = 'small',rotation = 'vertical',transform = latlon_proj)
+            else:
+                continue
     
 
     return
@@ -459,64 +455,150 @@ def plot(t_index, xrdata, max_refl, ncgrid, dbz, ind=None):
 if __name__ == '__main__':
     parser = create_parser()
     args = parser.parse_args()
+
     
-# <<<<<<< Updated upstream
-#     data = xarray.open_mfdataset(args.path+"*grid.nc", engine="netcdf4")
-#     data["time"].encoding["units"] = "seconds since 2000-01-01 00:00:00"
-#     rho = 0.90
-#     ref = 10
-#     maxrefl = qc_reflectivity2(data, rho, ref=ref)
-# =======
-    data = xarray.open_mfdataset(args.path+"*_grid.nc", engine="netcdf4")
-    data['time'].encoding['units']="seconds since 2000-01-01 00:00:00"
-    bad_rhv = data["cross_correlation_ratio"] < 0.9
-    bad_refl = data["reflectivity"] < 10
-    bad=bad_rhv & bad_refl
-    maxrefl = data["reflectivity"].where(~bad, np.nan).max(axis=1)
-#     data["time"].encoding["units"] = "seconds since 2000-01-01 00:00:00"
-#     rho = 0.90
-#     ref = 10
-#     maxrefl = qc_reflectivity2(data, rho, ref=ref)
-# >>>>>>> Stashed changes
+
+    #NEXRAD
+    if args.data_type == 'NEXRAD':
+    
+        data = xarray.open_mfdataset(args.path+"*_grid.nc", engine="netcdf4")
+        data['time'].encoding['units']="seconds since 2000-01-01 00:00:00"
+        bad_rhv = data["cross_correlation_ratio"] < 0.9
+        bad_refl = data["reflectivity"] < 10
+        bad=bad_rhv & bad_refl
+        maxrefl = data["reflectivity"].where(~bad, np.nan).max(axis=1)
+        ts = pd.to_datetime(data['time'][0].values)
+        date = ts.strftime('%Y%m%d')
+
+        date = args.path[-9:-1]
+        
+        
+        # Set up directory to save output and plots:
+        savedir = args.data_type + "_tobac_Save_"+date
+        if not os.path.exists(savedir):
+            os.makedirs(savedir)
+        plot_dir = savedir+"/tobac_Plot/"
+        if not os.path.exists(plot_dir):
+            os.makedirs(plot_dir)
+
+        
+# #HORIZONTAL GRID RESOLUTION, AND TIME RESOLUTION
+        datetimes = data["time"]
+        timedeltas = [(datetimes[i - 1] - datetimes[i]).astype("timedelta64[m]")for i in range(1, len(datetimes))]
+        average_timedelta = sum(timedeltas) / len(timedeltas)
+        dt = np.abs(np.array(average_timedelta)).astype("timedelta64[m]").astype(int)
+        deltax = [data["x"][i - 1] - data["x"][i] for i in range(1, len(data["x"]))]
+        dxy = np.abs(np.mean(deltax).astype(int)) / 1000.
+
+# 
+        
+    #NUWRF
+    if args.data_type == 'NUWRF':
+    
+    #FOR NUWRF NOT POLARRIS  
+    
+        files = sorted(glob(args.path+"wrfout*"))
+        data1 = xarray.open_dataset(files[0])
+        drop_list = list(np.sort(list(data1.variables)))
+        drop_list = [e for e in drop_list if e not in ('COMDBZ', 'Times','XLAT','XLONG','XTIME')]
 
 
-    ts = pd.to_datetime(data['time'][0].values)
-    date = ts.strftime('%Y%m%d')
+
+        import xarray as xr
+        import xwrf
+
+
+        data = xr.open_mfdataset(
+            files,
+            engine="xwrf",
+            parallel=True,
+            concat_dim="Time",
+            combine="nested",
+            chunks={'Time': 1},decode_times=False,drop_variables = drop_list)
+
+        #MAKE THE TIME DIMENSION AND COORDINATES PLAY NICE
+        data = data.rename_dims({'Time': 'time'})
+        data['time'] = data['Times']
+        maxrefl = data['COMDBZ']
+        maxrefl = maxrefl.drop('XTIME')
+        maxrefl = maxrefl.drop('Times')
+
+        # #HORIZONTAL GRID RESOLUTION, AND TIME RESOLUTION
+        dxy = data1.DX/1000.
+        dt = data1.DT
+
+        ts = pd.to_datetime(data['time'][0].values)
+        date = ts.strftime('%Y%m%d')
+        print(date)
+        
+        savedir = args.data_type + "_tobac_Save_"+date
+        if not os.path.exists(savedir):
+            os.makedirs(savedir)
+        plot_dir = savedir+"/tobac_Plot/"
+        if not os.path.exists(plot_dir):
+            os.makedirs(plot_dir)
+
+    
+
+        #POLARRIS
+        
+    if args.data_type == 'POLARRIS':
+    
+        data = xr.open_mfdataset(args.path+'*.nc', engine = 'netcdf4',combine = 'nested' ,concat_dim='time')
+        data['time'].encoding['units']="seconds since 2000-01-01 00:00:00"
+        files = sorted(glob(args.path+'*.nc'))
+        arr = []
+        for i in files:
+            arr.append(pd.to_datetime(i[-19:-3], format = '%Y_%m%d_%H%M%S'))
+        arr = pd.DatetimeIndex(arr)
+        data = data.assign_coords(time=arr)
+
+
+        bad_rhv = data["RH"] < 0.9
+        bad_refl = data["CZ"] < 10
+        bad=bad_rhv & bad_refl
+        maxrefl = data["CZ"].where(~bad, np.nan).max(axis=1)
+
+    
+
+        #Dt, DXY
+        datetimes = data['time']
+        timedeltas = [(datetimes[i-1]-datetimes[i]).astype('timedelta64[m]') for i in range(1, len(datetimes))]
+        average_timedelta = sum(timedeltas) / len(timedeltas)
+        dt = np.abs(np.array(average_timedelta)).astype('timedelta64[m]').astype(int)
+        deltax = [data['x'][i-1]-data['x'][i] for i in range(1, len(data['x']))]
+        dxy = np.abs(np.mean(deltax).astype(int))/1000
+
+
+        ts = pd.to_datetime(data['time'][0].values)
+        date = ts.strftime('%Y%m%d')
+        print(date)
+
+
+        savedir = args.data_type + "_tobac_Save_"+date
+        if not os.path.exists(savedir):
+            os.makedirs(savedir)
+        plot_dir = savedir+"/tobac_Plot/"
+        if not os.path.exists(plot_dir):
+            os.makedirs(plot_dir)
 
 
 
 
-    # Set up directory to save output and plots:
-    savedir = "tobac_Save_"+date
-    if not os.path.exists(savedir):
-        os.makedirs(savedir)
-    plot_dir = "tobac_Save_"+date+"/tobac_Plot/"
-    if not os.path.exists(plot_dir):
-        os.makedirs(plot_dir)
-
-# #Feature detection:
-
-# Dictionary containing keyword options (could also be directly given to the function)
+    # Dictionary containing keyword options (could also be directly given to the function)
     parameters_features = {}
     parameters_features["position_threshold"] = "weighted_diff"
     parameters_features["sigma_threshold"] = 1.0  # 0.5 is the default
     parameters_features["threshold"] = args.track_threshold
-    # parameters_features['min_num']=0
-    # parameters_features['min_distance']=5 #0 #15
-    # parameters_features['n_erosion_threshold']=0
-    # parameters_features['n_min_threshold']=0
 
+    # Dictionary containing keyword arguments for segmentation step:
+    parameters_segmentation = {}
+    parameters_segmentation["method"] = "watershed"
+    parameters_segmentation["threshold"] = args.track_threshold  # mm/h mixing ratio
+        
+        
 
-
-	# #Dt, DXY
-    datetimes = data["time"]
-    timedeltas = [(datetimes[i - 1] - datetimes[i]).astype("timedelta64[m]")for i in range(1, len(datetimes))]
-    average_timedelta = sum(timedeltas) / len(timedeltas)
-    dt = np.abs(np.array(average_timedelta)).astype("timedelta64[m]").astype(int)
-
-    deltax = [data["x"][i - 1] - data["x"][i] for i in range(1, len(data["x"]))]
-    dxy = np.abs(np.mean(deltax).astype(int)) / 1000
-
+# # #Feature detection:
 
 
     maxrefl_iris = maxrefl.to_iris()
@@ -529,21 +611,19 @@ if __name__ == '__main__':
     print("features saved")
 
 
-    # Dictionary containing keyword arguments for segmentation step:
-    parameters_segmentation = {}
-    parameters_segmentation["method"] = "watershed"
-    parameters_segmentation["threshold"] = args.track_threshold  # mm/h mixing ratio
-    # parameters_segmentation['ISO_dilate']=10 #this is the size
-    # parameters_segmentation['features']
-    # parameters_segmentation['field']
-    # parameters_segmentation['dxy']
-    # parameters_segmentation['target']
-    # parameters_segmentation['level']
-    # parameters_segmentation['method']
-    # parameters_segmentation['max_distance']
-    # Maximum distance from a marker allowed to be classified as
-    # belonging to that cell. Default is None.
-    # parameters_segmentation['vertical_coord']
+
+    # Dictionary containing keyword arguments for the linking step:
+    parameters_linking = {}
+    parameters_linking["stubs"] = 5
+    parameters_linking["method_linking"] = "predict"
+    parameters_linking["adaptive_stop"] = 0.2
+    parameters_linking["adaptive_step"] = 0.95
+    parameters_linking["order"] = 2  # Order of polynomial for extrapolating
+    parameters_linking["subnetwork_size"] = 100  # 50 #100
+    parameters_linking["memory"] = 3  # 4
+    # parameters_linking['time_cell_min']=1
+    parameters_linking["v_max"] =  args.track_speed  
+    parameters_linking["d_min"] = None  # 5    
 
     Features_df = Features.to_dataframe()
 
@@ -590,23 +670,8 @@ if __name__ == '__main__':
     print("features saved")
 
 
-
-    # Dictionary containing keyword arguments for the linking step:
-    parameters_linking = {}
-    parameters_linking["stubs"] = 5
-    parameters_linking["method_linking"] = "predict"
-    parameters_linking["adaptive_stop"] = 0.2
-    parameters_linking["adaptive_step"] = 0.95
-    parameters_linking["order"] = 2  # Order of polynomial for extrapolating
-    parameters_linking["subnetwork_size"] = 100  # 50 #100
-    parameters_linking["memory"] = 3  # 4
-    # parameters_linking['time_cell_min']=1
-    parameters_linking["v_max"] =  args.track_speed  
-    parameters_linking["d_min"] = None  # 5    
-
     # Perform trajectory linking using trackpy and save the resulting DataFrame:
 
-    # Track=tobac.themes.tobac_v1.linking_trackpy(Features,Mask,dt=dt,dxy=dxy,**parameters_linking)
     Features_df = Features.to_dataframe()
     Track = tobac.linking_trackpy(
     Features_df, Mask_iris, dt=dt, dxy=dxy, **parameters_linking)
@@ -620,23 +685,79 @@ if __name__ == '__main__':
     refl_mask = xarray.open_dataset(savedir + "/Mask_Segmentation_refl.nc")
     refl_features = xarray.open_dataset(savedir + "/Features_Precip.nc")
 
-# <<<<<<< Updated upstream
-# =======
+
     print("starting merge_split")
-# >>>>>>> Stashed changes
-    d = merge_split_MEST(Track,500., distance=15000.0)  # , dxy = dxy)
+
+    d = merge_split_MEST(Track,dxy*1000., distance=15000.0)  # , dxy = dxy)
     Track = xarray.open_dataset(savedir + "/Track.nc")
+    if args.data_type =='NUWRF':
+        Track = Track.rename_vars({'XLAT':'wrf_XLAT', 'XLONG':'wrf_XLONG'})
     ds = standardize_track_dataset(Track, refl_mask)
     both_ds = xarray.merge([ds, d], compat="override")
     both_ds = compress_all(both_ds)
     both_ds.to_netcdf(os.path.join(savedir, "Track_features_merges.nc"))
  
-    nc_grid = load_cfradial_grids(args.path+"*grid.nc")
-    for i in range(len(nc_grid.time)):
-        time_index = i
-        fig = plt.figure(figsize=(9, 9))
-        fig.set_canvas(plt.gcf().canvas)
-        plot(time_index, both_ds, maxrefl, nc_grid, args.track_threshold)
-        fig.savefig(plot_dir + date+"_tobac"+str(args.track_threshold)+'dbz' + str(time_index) + "_"+args.site+".png")
-        plt.close(fig)
+ 
+    if args.data_type == 'NEXRAD':
+    
+        nc_grid = load_cfradial_grids(args.path+"*grid.nc")
+        for i in range(len(nc_grid.time)):
+            time_index = i
+            fig = plt.figure(figsize=(9, 9))
+            fig.set_canvas(plt.gcf().canvas)
+            plot(time_index, both_ds, maxrefl, nc_grid, args.track_threshold)
+            fig.savefig(plot_dir + date+"_tobac"+str(args.track_threshold)+'dbz' + str(time_index) + "_"+args.site+".png")
+            plt.close(fig)
+
+    if args.data_type == 'NUWRF':
+
+
+        ref_levels = [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75]
+        for j in range(len(maxrefl.time)):
+            time_index = j
+            fig, ax = plt.subplots(figsize=(10,10))
+            refl = maxrefl[j,:,:].values
+            fig.suptitle(str(maxrefl['time'][j].data)[:-10])
+
+            y_mesh = maxrefl['XLAT'].values
+            x_mesh = maxrefl['XLONG'].values
+            refplt = ax.contourf(x_mesh,y_mesh, refl, extend = 'max',levels = ref_levels,cmap='pyart_LangRainbow12',origin = 'lower',
+            vmin=-24, vmax=72, extent = [-96,-93,28,30])
+
+            fig.colorbar(refplt,fraction=0.046, pad=0.04)
+            i = np.where(refl_mask['segmentation_mask'][j,:,:] > 0)
+            y, x = y_mesh[i[0],i[1]],x_mesh[i[0],i[1]]
+            imcell2 = ax.scatter(x,y,s = 0.5,c = 'gray', marker = '.',alpha = 0.75)
+
+            for i in both_ds['track']:
+                track_i = np.where(both_ds['cell_parent_track_id'] == i.values)
+                for cell in both_ds['cell'][track_i]:
+                    if cell < 0:
+                        continue
+
+                    feature_id = np.where(both_ds['feature_parent_cell_id'] == cell)
+                    if (j <= np.nanmax(both_ds['feature_time_index'][feature_id])) and (j >= np.nanmin(both_ds['feature_time_index'][feature_id])):
+                        ax.plot(both_ds['wrf_XLONG'][feature_id], both_ds['wrf_XLAT'][feature_id], '-.',color='b',alpha = 0.5)
+                        ax.text(both_ds['wrf_XLONG'][feature_id][-1],both_ds['wrf_XLAT'][feature_id][-1], f'{int(i)}', fontsize = 'small',rotation = 'vertical')
+                    else:
+                        continue
+
+                fig.savefig(plot_dir + date+"_tobac_NUWRF_"+str(args.track_threshold)+'dbz' + str(time_index) + "_"+args.site+".png")
+                plt.close(fig)
+                
+                
+    if args.data_type == 'POLARRIS':
+
+        nc_grid = load_cfradial_grids_polarris(data)
+        for i in range(len(nc_grid.time)):
+            time_index = i
+            fig = plt.figure(figsize=(9,9))
+            fig.set_canvas(plt.gcf().canvas)
+            plot(time_index,both_ds,maxrefl,nc_grid,args.track_threshold)
+            fig.savefig(plot_dir + date+"_tobac_NUWRF_"+str(args.track_threshold)+'dbz' + str(time_index) + "_"+args.site+".png")
+            plt.close(fig)
+
+
+
+
 
