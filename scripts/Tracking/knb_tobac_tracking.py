@@ -61,6 +61,7 @@ from datetime import datetime
 import math
 from pandas.core.common import flatten
 from scipy import ndimage
+from scipy.spatial import KDTree
 
 # get_ipython().run_line_magic("matplotlib", "inline")
 # %matplotlib widget
@@ -484,6 +485,18 @@ if __name__ == '__main__':
         Track = Track.rename_vars({'XLAT':'wrf_XLAT', 'XLONG':'wrf_XLONG'})
     ds = standardize_track_dataset(Track, refl_mask)
     both_ds = xarray.merge([ds, d], compat="override")
+
+    hdim1 = both_ds['feature_hdim1_coordinate'].values*0.5
+    hdim2 = both_ds['feature_hdim2_coordinate'].values*0.5
+    pts = np.vstack((hdim2, hdim1)).T
+    tree = KDTree(pts)
+    #note hdim is in km on the grid
+    num_obj = np.zeros(len(both_ds["feature"].values))
+    for i,ind in enumerate(both_ds["feature"].values):
+        num_obj[i]=len(tree.query_ball_point(pts[i],r=5))
+    num_obj = num_obj.astype(int)
+    both_ds = both_ds.assign(feature_nearby_count=(['feature'], num_obj))
+    
     both_ds = compress_all(both_ds)
     both_ds.to_netcdf(os.path.join(savedir, "Track_features_merges.nc"))
  
