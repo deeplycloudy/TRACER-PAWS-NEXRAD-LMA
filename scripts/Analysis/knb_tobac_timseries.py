@@ -19,7 +19,49 @@ Example
 python knb_tobac_timseries.py --path="/Users/kelcy/DATA/20220322/" --lmapath="/Users/kelcy/DATA/PERiLS LMA deployments/V1.1_data/gridded/20220322_KGWX/" --tobacpath="/Users/kelcy/PYTHON/tracer-jcss_EBfork/tobac_Save_20220322/" --meltinglevel=4.0 --type="NEXRAD"
 
 
+Variables
+=========
+About the variables created and/or used by this script:
+feature_grid_cell_count - from tobac, maybe not reliable.
+feature_area - count of grid boxes in the 2D feature footprint.
+feature_maxrefl -  max reflectivity anywhere in 3D in feature.
+feature_zdrvol - count of grid boxes Zdr above 1 dB, in 3 km slab above melting level in feature. Thresholds from van Lier Walqui.
+feature_kdpvol - count of grid boxes Kdp above 0.75 dB, in 3 km slab above melting level in feature. Thresholds from van Lier Walqui.
+feature_zdrcol - sum of values vertical dimension (in 3 km slab) above Zdr threshold, and then max anywhere in 2D feature. "Column strength."
+feature_kdpcol - sum of values vertical dimension (in 3 km slab) above Kdp threshold, and then max anywhere in 2D feature. "Column strength."
+feature_zdrcol_mean - sum of values vertical dimension (in 3 km slab) above Zdr threshold, and then average across 2D feature.
+feature_kdpcol_mean - sum of values vertical dimension (in 3 km slab) above Kdp threshold, and then average across 2D feature.
+feature_zdrcol_total - sum of values in vertical and horizontal dimensions above Zdr threshold over the whole 3D column feature.
+feature_kdpcol_total - sum of values in vertical and horizontal dimensions above Kdp threshold over the whole 3D column feature.
 """
+
+import linecache
+import os
+import tracemalloc
+
+def display_top(snapshot, key_type='lineno', limit=10):
+    snapshot = snapshot.filter_traces((
+        tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
+        tracemalloc.Filter(False, "<unknown>"),
+    ))
+    top_stats = snapshot.statistics(key_type)
+
+    print("Top %s lines" % limit)
+    for index, stat in enumerate(top_stats[:limit], 1):
+        frame = stat.traceback[0]
+        print("#%s: %s:%s: %.1f KiB"
+              % (index, frame.filename, frame.lineno, stat.size / 1024))
+        line = linecache.getline(frame.filename, frame.lineno).strip()
+        if line:
+            print('    %s' % line)
+
+    other = top_stats[limit:]
+    if other:
+        size = sum(stat.size for stat in other)
+        print("%s other: %.1f KiB" % (len(other), size / 1024))
+    total = sum(stat.size for stat in top_stats)
+    print("Total allocated size: %.1f KiB" % (total / 1024))
+
 
 
 def create_parser():
@@ -99,6 +141,8 @@ except ImportError:
 
 # VERSION FOR EACH FEATURE AND CELL IN XARRAY DATASET
 
+import gc
+import tracemalloc
 from matplotlib import cm
 
 from glob import glob
@@ -110,7 +154,7 @@ from scipy import ndimage as ndi
 from scipy import spatial
 from skimage.segmentation import watershed
 from skimage.feature import peak_local_max
-from geopy.distance import geodesic
+from geopy.distance import geodesic, great_circle
 import os
 from scipy.interpolate import griddata
 from pandas.core.common import flatten
@@ -283,11 +327,7 @@ def load_cfradial_grids(file_list):
 
     return ds
 
-
-if __name__ == "__main__":
-    parser = create_parser()
-    args = parser.parse_args()
-
+def main(args):
     ###LOAD DATA
     lmafiles = sorted(glob(args.lmapath + "*.nc"))
     lma_longitude = []
@@ -442,47 +482,53 @@ if __name__ == "__main__":
     feaure_maxrefl = xrdata["max_reflectivity"].values
     print(np.nanmax(np.unique(xrdata["feature_time_index"].values)))
     print(np.nanmax(xrdata["feature"].values))
+    
+    # tracemalloc.start()
     for num, i in enumerate(np.unique(xrdata["feature_time_index"].values)):
-        
+        # if i>10:
+        #     break
         print(i)
 #         if i < 350:
 #             continue
-        zdrvol = (zdr_qc[i, ind2 : ind2 + 6, :, :]).count(dim="z")
-        kdpvol = (kdp_qc[i, ind2 : ind2 + 6, :, :]).count(dim="z")
-        zdrcol = (zdr_qc[i, ind2 : ind2 + 6, :, :]).sum(dim="z")
-        kdpcol = (kdp_qc[i, ind2 : ind2 + 6, :, :]).sum(dim="z")
+        # if i==2:
+        #     prev_snapshot = tracemalloc.take_snapshot()
+
+        zdrvol = (zdr_qc[i, ind2 : ind2 + 6, :, :]).count(dim="z").compute()
+        kdpvol = (kdp_qc[i, ind2 : ind2 + 6, :, :]).count(dim="z").compute()
+        zdrcol = (zdr_qc[i, ind2 : ind2 + 6, :, :]).sum(dim="z").compute()
+        kdpcol = (kdp_qc[i, ind2 : ind2 + 6, :, :]).sum(dim="z").compute()
         ids = np.where(xrdata["feature_time_index"].values == i)
         ids = xrdata["feature"].values[ids]
         features_this_frame = xrdata["segmentation_mask"].data[i, :, :]
 
         for nid, f in enumerate(ids):
             print(f)
-
+            this_feature = (features_this_frame == f)
             feature_zdrvol[f - 1] = (
-                zdrvol.where(features_this_frame == f, other=0).sum().values
+                zdrvol.where(this_feature, other=0).sum().values
                 * grid_box_vol
             )
             feature_kdpvol[f - 1] = (
-                kdpvol.where(features_this_frame == f, other=0).sum().values
+                kdpvol.where(this_feature, other=0).sum().values
                 * grid_box_vol
             )
             feature_kdpcol_max[f - 1] = kdpcol.where(
-                features_this_frame == f, other=0
+                this_feature, other=0
             ).values.max()
             feature_zdrcol_max[f - 1] = zdrcol.where(
-                features_this_frame == f, other=0
+                this_feature, other=0
             ).values.max()
             feature_kdpcol_mean[f - 1] = np.nanmean(
-                kdpcol.where(features_this_frame == f, other=np.NAN).values
+                kdpcol.where(this_feature, other=np.NAN).values
             )
             feature_zdrcol_mean[f - 1] = np.nanmean(
-                zdrcol.where(features_this_frame == f, other=np.NAN).values
+                zdrcol.where(this_feature, other=np.NAN).values
             )
             feature_kdpcol_total[f - 1] = kdpcol.where(
-                features_this_frame == f, other=0.0
+                this_feature, other=0.0
             ).values.sum()
             feature_zdrcol_total[f - 1] = zdrcol.where(
-                features_this_frame == f, other=0.0
+                this_feature, other=0.0
             ).values.sum()
 
             time1 = time1_arr[i]
@@ -530,8 +576,8 @@ if __name__ == "__main__":
                     d, inder = kdtree.query(pt)
                     new_point = combined_x_y_arrays[inder]
                     #             index.append(inder)
-                    d = geodesic(pt, new_point).km
-                    dist.append(geodesic(pt, new_point).km)
+                    d = great_circle(pt, new_point).km
+                    dist.append(d)
                     if d > 3:
                         continue
                     else:
@@ -549,16 +595,30 @@ if __name__ == "__main__":
                     flash_count_arr[f - 1] = flash_count / dt
                     area_LE_4km[f - 1] = flash_le4 / dt
                     area_GT_4km[f - 1] = flash_gt4 / dt
+        print("Cleaning memory")
+        del kdpvol, zdrvol, kdpcol, zdrcol
+        gc.collect()
 
-        else:
-            continue
+        # else:
+            # continue
+        
+#     final_snapshot = tracemalloc.take_snapshot()
 
+#     top_stats = final_snapshot.compare_to(prev_snapshot, 'lineno')
+
+#     print("---------------------------------------------------------")
+#     [print(stat) for stat in top_stats[:15]]
+    
+#     display_top(prev_snapshot)
+#     display_top(final_snapshot)
+    
     end = time.time()
     print(end - start)
     track_dim = "tracks"
     cell_dim = "cells"
     feature_dim = "features"
 
+    # Create the dataset and make the coordinate and dimension names match the ID variables
     test = xr.Dataset(
         {
             "track": (track_dim, xrdata["track"].values),
@@ -578,6 +638,29 @@ if __name__ == "__main__":
             "feature_area_LE4km": (feature_dim, area_LE_4km),
             "feature_area_GT_4km": (feature_dim, area_GT_4km),
         }
-    )
+    ).swap_dims({'features':'feature', 'tracks':'track', 'cells':'cell'}
+    ).set_coords(['feature', 'cell', 'track'])
+    
+    # Clean up a couple other things. This could be fixed above, too...
+    test['feature_area'] = test.feature_area/(.5*.5) # Undo the conversion to km^2
+    test['feature_flash_count_area_LE_4km'] = test.feature_area_LE4km
+    test['feature_flash_count_area_GT_4km'] = test.feature_area_GT_4km
+    test = test.drop_vars(('feature_area_LE4km','feature_area_GT_4km'))
 
+    # -1 was being used insteaed of 0. For these variables, we want zero since it
+    # indicates the value of the observed quantity, not the absence of a measurement.
+    data_vars = [var for var in test.variables if 'feature_' in var]
+    for var in data_vars:
+        missing = test[var]<0
+        test[var][missing] = 0
+  
     test.to_netcdf(os.path.join(savedir, "timeseries_data.nc"))
+    
+if __name__ == "__main__":
+    parser = create_parser()
+    args = parser.parse_args()
+    import dask
+    import xarray as xr
+    xr.set_options(file_cache_maxsize=1)
+    with dask.config.set(scheduler='single-threaded'):
+        main(args)
