@@ -483,23 +483,20 @@ if __name__ == '__main__':
         drop_list = [e for e in drop_list if e not in ('COMDBZ', 'Times','XLAT','XLONG','XTIME')]
 
 
+
         import xwrf
+        data = xr.open_mfdataset(files, engine="netcdf4",parallel=True,
+            concat_dim="Time", combine="nested", chunks={"Time": 1},decode_times=False,
+            drop_variables=drop_list,).xwrf.postprocess()
 
-
-        data = xr.open_mfdataset(
-            files,
-            engine="xwrf",
-            parallel=True,
-            concat_dim="Time",
-            combine="nested",
-            chunks={'Time': 1},decode_times=False,drop_variables = drop_list)
 
         #MAKE THE TIME DIMENSION AND COORDINATES PLAY NICE
         data = data.rename_dims({'Time': 'time'})
-        data['time'] = data['Times']
+        data['time'] = data['Time']
         maxrefl = data['COMDBZ']
         maxrefl = maxrefl.drop('XTIME')
-        maxrefl = maxrefl.drop('Times')
+        maxrefl = maxrefl.drop('Time')
+
 
         ref_levels = [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75]
         for j in range(len(maxrefl.time)):
@@ -561,9 +558,3 @@ if __name__ == '__main__':
             plot(time_index,both_ds,maxrefl,nc_grid)
             fig.savefig(plot_dir + date+"_tobac_NUWRF_"+str(time_index)+".png")
             plt.close(fig)
-
-
-
-
-
-
