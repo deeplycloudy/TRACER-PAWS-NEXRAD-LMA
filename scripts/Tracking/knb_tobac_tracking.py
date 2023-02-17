@@ -303,22 +303,17 @@ if __name__ == '__main__':
 
         import xarray as xr
         import xwrf
+        data = xr.open_mfdataset(files, engine="netcdf4",parallel=True,
+            concat_dim="Time", combine="nested", chunks={"Time": 1},decode_times=False,
+            drop_variables=drop_list,).xwrf.postprocess()
 
-
-        data = xr.open_mfdataset(
-            files,
-            engine="xwrf",
-            parallel=True,
-            concat_dim="Time",
-            combine="nested",
-            chunks={'Time': 1},decode_times=False,drop_variables = drop_list)
 
         #MAKE THE TIME DIMENSION AND COORDINATES PLAY NICE
         data = data.rename_dims({'Time': 'time'})
-        data['time'] = data['Times']
+        data['time'] = data['Time']
         maxrefl = data['COMDBZ']
         maxrefl = maxrefl.drop('XTIME')
-        maxrefl = maxrefl.drop('Times')
+        maxrefl = maxrefl.drop('Time')
 
         # #HORIZONTAL GRID RESOLUTION, AND TIME RESOLUTION
         dxy = data1.DX/1000.
