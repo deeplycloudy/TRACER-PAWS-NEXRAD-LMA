@@ -334,9 +334,9 @@ def track_polarimetry(summed_features,
 
     has_zdr = (summed_features.feature_zdrvol > zdr_thresh)
     no_zdr = ~has_zdr
-    has_kdp = (summed_features.feature_kdpvol > zdr_thresh)
+    has_kdp = (summed_features.feature_kdpvol > kdp_thresh)
     no_kdp = ~has_kdp
-    has_lightning = (summed_features.feature_flash_count > zdr_thresh)
+    has_lightning = (summed_features.feature_flash_count > flash_thresh)
     no_lightning = ~has_lightning
 
     track_membership = dict(
