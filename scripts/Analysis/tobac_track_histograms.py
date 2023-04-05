@@ -20,7 +20,7 @@ type: Name of the type of data (NEXRAD/POLARRIS/NUWRF) given as all uppercase st
 Example
 =======
 python tobac_track_histograms.py --trackpath='/efs/tracer/NEXRAD/tobac_Save_20220604/Track_features_merges.nc' \
-                                 --timeseriespath='/efs/tracer/NEXRAD/tobac_Save_20220604/timeseries_data.nc' \
+                                 --timeseriespath='/efs/tracer/NEXRAD/tobac_Save_20220604/timeseries_data_melt4400.nc' \
                                  --referencegridpath='/efs/tracer/NEXRAD/20220604/KHGX20220604_000224_V06_grid.nc' \
                                  --output_path='/efs/tracer/NEXRAD/tobac_Save_20220604/' \
                                  --distance=150.0
@@ -319,6 +319,52 @@ def add_track_durations(combo):
     combo['feature_parent_track_duration'] = (the_dims, replicated_data.track_duration.values)
     return combo
 
+def track_polarimetry(summed_features,    
+        zdr_thresh = 0.0,
+        kdp_thresh = 0.0,
+        flash_thresh = 0.0,):
+    """
+    Calculate the polarimetric column and lightning flash properties of a tracked dataset.
+    summed_features: a tracked dataset that has been grouped by feature_parent_track_id, 
+                     and then summed over the feature dimension.
+    
+    Returns (track_membership, counts), a dictionary of DataArrays giving boolean membership of each 
+    track in each category, and a pandas DataFrame that is a count of tracks in those categories.
+    """
+
+    has_zdr = (summed_features.feature_zdrvol > zdr_thresh)
+    no_zdr = ~has_zdr
+    has_kdp = (summed_features.feature_kdpvol > zdr_thresh)
+    no_kdp = ~has_kdp
+    has_lightning = (summed_features.feature_flash_count > zdr_thresh)
+    no_lightning = ~has_lightning
+
+    track_membership = dict(
+        track_has_zdr_kdp_ltg = (has_kdp & has_zdr & has_lightning),
+        track_has_zdr_kdp_only = (has_kdp & has_zdr & no_lightning),
+        track_has_zdr_ltg_only = (no_kdp & has_zdr & has_lightning),
+        track_has_zdr_only = (no_kdp & has_zdr & no_lightning),
+        track_has_nothing = (no_kdp & no_zdr & no_lightning),
+        track_has_kdp_only = (has_kdp & no_zdr & no_lightning),
+        track_has_kdp_ltg_only = (has_kdp & no_zdr & has_lightning),
+        track_has_ltg_only = (no_kdp & no_zdr & has_lightning),
+    )
+    
+    
+    
+    #header = ["nothing","zdr","kdp","kdp_zdr","ltg","kdp_zdr_ltg","kdp_ltg","zdr_ltg"]
+    #results_row = np.fromiter(map(sum, 
+    #                          [has_nothing,has_zdr_only,has_kdp_only,has_zdr_kdp_only,
+    #                           has_ltg_only,has_zdr_kdp_ltg,has_kdp_ltg_only,has_zdr_ltg_only]),
+    #                      dtype=int)
+    # counts = pd.DataFrame([results_row,], columns=header)
+    results = {k:[v.sum().values] for k,v in track_membership.items()}
+    counts = pd.DataFrame(results)
+    
+    
+    return track_membership, counts
+
+
 def open_track_timeseries_dataset(track_filename, timeseries_filename, reference_grid=None):
     # =======Load the tracks======
     
@@ -370,6 +416,8 @@ def main(args):
     combo = open_track_timeseries_dataset(
         args.trackpath, args.timeseriespath, reference_grid=args.referencegridpath)
     
+    meltlevel_string = args.timeseriespath.split('_')[-1].replace('.nc', '')
+    
     # These first steps could be broken into their own script for preprocessing the timeseries dataset
     # to contain a certain subset of the tracks. The later sections are a uniform 
     combo = feature_distance_from(combo, csapr_lon, csapr_lat, 'csapr')
@@ -420,7 +468,9 @@ def main(args):
     # Need to recalculate features_by_track now that we've added all variables to combo.
     features_by_track = combo.drop_dims(('x','y','time')).groupby('feature_parent_track_id')
     summed_features = features_by_track.sum(dim='feature')
-
+    
+    track_membership, track_counts = track_polarimetry(summed_features, zdr_thresh=0.0, kdp_thresh=0.0, flash_thresh=0.0)
+    
     pow2 = partial(pow, 2)
     powers_two = np.array([-1, 0] + list(map(pow2, range(20))) )+0.5
 
@@ -515,10 +565,14 @@ def main(args):
     #     bin_key = var.replace('percentile_', '')
     #     percentile_ds[var].attrs["long_name"] = var_bins[bin_key][0]
 
-    percentile_ds
-    histo_ds = xr.combine_by_coords((histo_ds, percentile_ds))
+    # Add the track_counts dataframe, which has only one row, here.
+    track_counts = track_counts.to_xarray().rename({'index':'track_count'})
+    
+    
+    histo_ds = xr.combine_by_coords((histo_ds, percentile_ds, track_counts))
+    histo_ds['track_maximum_distance_km'] = args.khgx_distance_km
 
-    histo_ds.to_netcdf(os.path.join(args.outdir, "histogram_data.nc"))
+    histo_ds.to_netcdf(os.path.join(args.outdir, "histogram_data_{0}.nc".format(meltlevel_string)))
     
 if __name__ == "__main__":
     parser = create_parser()
