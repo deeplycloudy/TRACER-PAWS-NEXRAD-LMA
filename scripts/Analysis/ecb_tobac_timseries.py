@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+#MODIEFIED 20230502: KNB
+
 import argparse
+
 
 parse_desc = """Find features, track, and plot all nexrad data in a given destination folder
 
@@ -16,7 +19,7 @@ type: Name of the type of data (NEXRAD/POLARRIS/NUWRF) given as all uppercase st
 
 Example
 =======
-python knb_tobac_timseries.py --path="/Users/kelcy/DATA/20220322/" --lmapath="/Users/kelcy/DATA/PERiLS LMA deployments/V1.1_data/gridded/20220322_KGWX/" --tobacpath="/Users/kelcy/PYTHON/tracer-jcss_EBfork/tobac_Save_20220322/" --meltinglevel=4.0 --type="NEXRAD"
+python knb_tobac_timseries.py --path="/Users/kelcy/DATA/20220322/" --lmapath="/Users/kelcy/DATA/PERiLS LMA deployments/V1.1_data/gridded/20220322_KGWX/" --tobacpath="/Users/kelcy/PYTHON/tracer-jcss_EBfork/tobac_Save_20220322/" --meltinglevel=4.0 -- freezinglevel=9.9 --type="NEXRAD"
 
 
 Variables
@@ -33,6 +36,9 @@ feature_zdrcol_mean - sum of values vertical dimension (in 3 km slab) above Zdr 
 feature_kdpcol_mean - sum of values vertical dimension (in 3 km slab) above Kdp threshold, and then average across 2D feature.
 feature_zdrcol_total - sum of values in vertical and horizontal dimensions above Zdr threshold over the whole 3D column feature.
 feature_kdpcol_total - sum of values in vertical and horizontal dimensions above Kdp threshold over the whole 3D column feature.
+feature_kdpwt_total - the total Kdp values in the feature, occurring between the melting level and 1km below the freezing level, weighted by its height above the melting level.
+feature_zdrwt_total - the total Zdr values in the feature, occurring between the melting level and 1km below the freezing level, weighted by its height above the melting level.
+
 """
 
 import linecache
@@ -110,6 +116,15 @@ def create_parser():
         type=float
     )
     parser.add_argument(
+        "--freezinglevel",
+        metavar="freezinglev",
+        required=True,
+        dest="freezinglev",
+        action="store",
+        help="-40C level in KM",
+        type=float
+    )
+    parser.add_argument(
         "--type",
         metavar="data type",
         required=False,
@@ -159,6 +174,8 @@ import os
 from scipy.interpolate import griddata
 from pandas.core.common import flatten
 import warnings
+
+from pyxlma.lmalib.traversal import OneToManyTraversal
 
 warnings.filterwarnings("ignore", category=UserWarning, append=True)
 warnings.filterwarnings("ignore", category=RuntimeWarning, append=True)
@@ -356,7 +373,14 @@ def main(args):
     # Read in feature information
     savedir = args.tobacpath
     xrdata = xr.open_dataset(savedir + "Track_features_merges.nc")
-
+    
+    # Remove all tracks that don't reach 35 dBZ (or whatever thresh we set below)
+    track_dBZ_thresh = 35.0
+    feature_is_bright = (xrdata['max_reflectivity'] > track_dBZ_thresh)
+    reduced_track_ids = np.unique(xrdata[{'feature':feature_is_bright}].feature_parent_track_id)
+    traversal = OneToManyTraversal(xrdata, ('track','cell','feature'), ('cell_parent_track_id', 'feature_parent_cell_id'))
+    xrdata = traversal.reduce_to_entities('track', reduced_track_ids)
+    print('reduced')
     path = args.path + "*grid.nc"
 
     data = xr.open_mfdataset(path)
@@ -370,12 +394,13 @@ def main(args):
     kdp_min = 0.75
     zdr_min = 1.0
     # This is the qc'd version of KDP and ZDR above threshold *regardless* of frame. It is computed lazily, so no penalty for doing it over the whole dataset.
-    radar_good = (data["cross_correlation_ratio"] >= rhv) & (
-        data["reflectivity"] >= ref
-    )
-    kdp_large = radar_good & (data["KDP_CSU"] >= kdp_min)
+    #20230502: we have decided to not QC the ZDR/KDP in order to not remove areas where a KDP column is present with low Rho_hv values. 
+    #radar_good = (data["cross_correlation_ratio"] >= rhv) & (
+    #    data["reflectivity"] >= ref
+    #)
+    kdp_large = (data["KDP_CSU"] >= kdp_min)
     kdp_qc = data["KDP_CSU"].where(kdp_large)
-    zdr_large = radar_good & (data["differential_reflectivity"] >= zdr_min)
+    zdr_large = (data["differential_reflectivity"] >= zdr_min)
     zdr_qc = data["differential_reflectivity"].where(zdr_large)
 
     deltax = data["x"][1:].values - data["x"][:-1].values
@@ -403,35 +428,21 @@ def main(args):
             if time1_arr[i] > time2_arr[i]:
                 time1_arr[i] = 0
 
-    feature_area = np.zeros(len(xrdata["feature"].values))
-    feature_area[:] = -1
-    feature_area[:] = (xrdata["feature_area"].values) * dxy * dxy
-    feature_maxrefl = np.zeros(len(xrdata["feature"].values))
-    feature_maxrefl[:] = -1
-    feature_maxrefl = xrdata["max_reflectivity"].values
-    feature_zdrvol = np.zeros(len(xrdata["feature"].values))
-    feature_zdrvol[:] = -1
-    feature_kdpvol = np.zeros(len(xrdata["feature"].values))
-    feature_kdpvol[:] = -1
-    flash_count_arr = np.zeros(len(xrdata["feature"].values))
-    flash_count_arr[:] = -1
-    area_LE_4km = np.zeros(len(xrdata["feature"].values))
-    area_LE_4km[:] = -1
-    area_GT_4km = np.zeros(len(xrdata["feature"].values))
-    area_GT_4km[:] = -1
-    feature_zdrcol_max = np.zeros(len(xrdata["feature"].values))
-    feature_kdpcol_max = np.zeros(len(xrdata["feature"].values))
-    feature_zdrcol_max[:] = -1
-    feature_kdpcol_max[:] = -1
-    feature_zdrcol_mean = np.zeros(len(xrdata["feature"].values))
-    feature_kdpcol_mean = np.zeros(len(xrdata["feature"].values))
-    feature_zdrcol_mean[:] = -1
-    feature_kdpcol_mean[:] = -1
-    feature_zdrcol_total = np.zeros(len(xrdata["feature"].values))
-    feature_kdpcol_total = np.zeros(len(xrdata["feature"].values))
-    feature_zdrcol_total[:] = -1
-    feature_kdpcol_total[:] = -1
 
+    feature_zdrvol = dict()
+    feature_kdpvol = dict()
+    flash_count_arr = dict()
+    area_LE_4km = dict()
+    area_GT_4km = dict()
+    feature_zdrcol_max = dict()
+    feature_kdpcol_max = dict()
+    feature_zdrcol_mean = dict()
+    feature_kdpcol_mean = dict()
+    feature_zdrcol_total = dict()
+    feature_kdpcol_total = dict()
+    feature_zdrwcol_total = dict()
+    feature_kdpwcol_total = dict()
+    x_mesh,z_mesh,y_mesh = np.meshgrid(data['x'],data['z'],data['y'])
     rhgt = (
         np.array(
             [
@@ -474,60 +485,80 @@ def main(args):
     # Find the indicie in rhgt that correponds to the melting level given in the command line
     meltlev = args.meltinglev*1000.0
     ind2=np.argmin(np.absolute(rhgt - meltlev)) #8
-
+    frzlev = args.freezinglev*1000.0 - 1000.0
+    indfrz = np.argmin(np.absolute(rhgt - frzlev))
     del data
     start = time.time()
-
-    feature_area = (xrdata["feature_area"].values) * dxy * dxy
-    feaure_maxrefl = xrdata["max_reflectivity"].values
+     
     print(np.nanmax(np.unique(xrdata["feature_time_index"].values)))
     print(np.nanmax(xrdata["feature"].values))
     
     # tracemalloc.start()
     for num, i in enumerate(np.unique(xrdata["feature_time_index"].values)):
-        # if i>10:
-        #     break
+
         print(i)
-#         if i < 350:
-#             continue
+
         # if i==2:
         #     prev_snapshot = tracemalloc.take_snapshot()
 
-        zdrvol = (zdr_qc[i, ind2 : ind2 + 6, :, :]).count(dim="z").compute()
-        kdpvol = (kdp_qc[i, ind2 : ind2 + 6, :, :]).count(dim="z").compute()
-        zdrcol = (zdr_qc[i, ind2 : ind2 + 6, :, :]).sum(dim="z").compute()
-        kdpcol = (kdp_qc[i, ind2 : ind2 + 6, :, :]).sum(dim="z").compute()
+        zdrvol = (zdr_qc[i, ind2 : indfrz, :, :]).count(dim="z").compute()
+        kdpvol = (kdp_qc[i, ind2 : indfrz, :, :]).count(dim="z").compute()
+        zdrcol = (zdr_qc[i, ind2 : indfrz, :, :]).sum(dim="z").compute()
+        kdpcol = (kdp_qc[i, ind2 : indfrz, :, :]).sum(dim="z").compute()
+        kdpwcol = (kdp_qc[i,ind2 : indfrz ,:,:]*(z_mesh[ind2:indfrz,:,:]-rhgt[ind2])).sum(dim="z").compute() #using the nearest grid box height to the melting level instead of the exact melting level to avoid negative height values.
+        zdrwcol = (zdr_qc[i,ind2 : indfrz ,:,:]*(z_mesh[ind2:indfrz,:,:]-rhgt[ind2])).sum(dim="z").compute()
         ids = np.where(xrdata["feature_time_index"].values == i)
         ids = xrdata["feature"].values[ids]
         features_this_frame = xrdata["segmentation_mask"].data[i, :, :]
 
+        
         for nid, f in enumerate(ids):
             print(f)
             this_feature = (features_this_frame == f)
-            feature_zdrvol[f - 1] = (
-                zdrvol.where(this_feature, other=0).sum().values
+
+            
+            feature_zdrvol[f] = (
+                zdrvol.where(this_feature, other=0.0).sum().values
                 * grid_box_vol
             )
-            feature_kdpvol[f - 1] = (
-                kdpvol.where(this_feature, other=0).sum().values
+
+            feature_kdpvol[f] = (
+                kdpvol.where(this_feature, other=0.0).sum().values
                 * grid_box_vol
             )
-            feature_kdpcol_max[f - 1] = kdpcol.where(
-                this_feature, other=0
+
+            feature_kdpcol_max[f] = kdpcol.where(
+                this_feature, other=0.0
             ).values.max()
-            feature_zdrcol_max[f - 1] = zdrcol.where(
-                this_feature, other=0
+            
+            feature_zdrcol_max[f] = zdrcol.where(
+                this_feature, other=0.0
             ).values.max()
-            feature_kdpcol_mean[f - 1] = np.nanmean(
-                kdpcol.where(this_feature, other=np.NAN).values
+            
+
+            feature_kdpcol_mean[f] = np.nanmean(
+                kdpcol.where(this_feature, other=0.0).values
             )
-            feature_zdrcol_mean[f - 1] = np.nanmean(
-                zdrcol.where(this_feature, other=np.NAN).values
+            
+
+            feature_zdrcol_mean[f] = np.nanmean(
+                zdrcol.where(this_feature, other=0.0).values
             )
-            feature_kdpcol_total[f - 1] = kdpcol.where(
+            
+
+            feature_kdpcol_total[f] = kdpcol.where(
                 this_feature, other=0.0
             ).values.sum()
-            feature_zdrcol_total[f - 1] = zdrcol.where(
+
+            feature_zdrcol_total[f] = zdrcol.where(
+                this_feature, other=0.0
+            ).values.sum()
+            
+            feature_zdrwcol_total[f] = zdrwcol.where(
+                this_feature, other=0.0
+            ).values.sum()
+            
+            feature_kdpwcol_total[f] = kdpwcol.where(
                 this_feature, other=0.0
             ).values.sum()
 
@@ -558,6 +589,9 @@ def main(args):
             xy = np.where(features_this_frame == f)  # t,y,x
 
             if len(xy[0]) <= 0:
+                flash_count_arr[f] = 0
+                area_LE_4km[f] = 0
+                area_GT_4km[f] = 0
                 continue
             else:
                 for ndd in range(len(xy[0])):
@@ -592,9 +626,13 @@ def main(args):
                             flash_gt4 += 1
 
                 if flash_count > 0:
-                    flash_count_arr[f - 1] = flash_count / dt
-                    area_LE_4km[f - 1] = flash_le4 / dt
-                    area_GT_4km[f - 1] = flash_gt4 / dt
+                    flash_count_arr[f] = flash_count / dt
+                    area_LE_4km[f] = flash_le4 / dt
+                    area_GT_4km[f] = flash_gt4 / dt
+                else:
+                    flash_count_arr[f] = 0
+                    area_LE_4km[f] = 0
+                    area_GT_4km[f] = 0
         print("Cleaning memory")
         del kdpvol, zdrvol, kdpcol, zdrcol
         gc.collect()
@@ -614,38 +652,41 @@ def main(args):
     
     end = time.time()
     print(end - start)
-    track_dim = "tracks"
-    cell_dim = "cells"
-    feature_dim = "features"
+    track_dim = "track"
+    cell_dim = "cell"
+    feature_dim = "feature"
 
-    # Create the dataset and make the coordinate and dimension names match the ID variables
+
     test = xr.Dataset(
         {
             "track": (track_dim, xrdata["track"].values),
             "cell": (cell_dim, xrdata["cell"].values),
             "feature": (feature_dim, xrdata["feature"].values),
-            "feature_area": (feature_dim, feature_area),
-            "feature_maxrefl": (feature_dim, feature_maxrefl),
-            "feature_zdrvol": (feature_dim, feature_zdrvol),
-            "feature_kdpvol": (feature_dim, feature_kdpvol),
-            "feature_zdrcol": (feature_dim, feature_zdrcol_max),
-            "feature_kdpcol": (feature_dim, feature_kdpcol_max),
-            "feature_zdrcol_mean": (feature_dim, feature_zdrcol_mean),
-            "feature_kdpcol_mean": (feature_dim, feature_kdpcol_mean),
-            "feature_zdrcol_total": (feature_dim, feature_zdrcol_total),
-            "feature_kdpcol_total": (feature_dim, feature_kdpcol_total),
-            "feature_flash_count": (feature_dim, flash_count_arr),
-            "feature_area_LE4km": (feature_dim, area_LE_4km),
-            "feature_area_GT_4km": (feature_dim, area_GT_4km),
+            "feature_area": (feature_dim, (xrdata["feature_area"].values) * dxy * dxy),
+            "feature_maxrefl": (feature_dim, xrdata["max_reflectivity"].values),
+            "feature_zdrvol": (feature_dim, xr.DataArray(list(feature_zdrvol.values()), coords={'feature':list(feature_zdrvol.keys())}).data),
+            "feature_kdpvol": (feature_dim, xr.DataArray(list(feature_kdpvol.values()), coords={'feature':list(feature_kdpvol.keys())}).data),
+            "feature_zdrcol": (feature_dim, xr.DataArray(list(feature_zdrcol_max.values()), coords={'feature':list(feature_zdrcol_max.keys())}).data),
+            "feature_kdpcol": (feature_dim, xr.DataArray(list(feature_kdpcol_max.values()), coords={'feature':list(feature_kdpcol_max.keys())}).data),
+            "feature_zdrcol_mean": (feature_dim, xr.DataArray(list(feature_zdrcol_mean.values()), coords={'feature':list(feature_zdrcol_mean.keys())}).data),
+            "feature_kdpcol_mean": (feature_dim, xr.DataArray(list(feature_kdpcol_mean.values()), coords={'feature':list(feature_kdpcol_mean.keys())}).data),
+            "feature_zdrcol_total": (feature_dim, xr.DataArray(list(feature_zdrcol_total.values()), coords={'feature':list(feature_zdrcol_total.keys())}).data),
+            "feature_kdpcol_total": (feature_dim, xr.DataArray(list(feature_kdpcol_total.values()), coords={'feature':list(feature_kdpcol_total.keys())}).data),
+            "feature_zdrwt_total": (feature_dim, xr.DataArray(list(feature_zdrwcol_total.values()), coords={'feature':list(feature_zdrwcol_total.keys())}).data),
+            "feature_kdpwt_total": (feature_dim, xr.DataArray(list(feature_kdpwcol_total.values()), coords={'feature':list(feature_kdpwcol_total.keys())}).data),
+            "feature_flash_count": (feature_dim, xr.DataArray(list(flash_count_arr.values()), coords={'feature':list(flash_count_arr.keys())}).data),
+            "feature_area_LE_4km": (feature_dim, xr.DataArray(list(area_LE_4km.values()), coords={'feature':list(area_LE_4km.keys())}).data),
+            "feature_area_GT_4km": (feature_dim, xr.DataArray(list(area_GT_4km.values()), coords={'feature':list(area_GT_4km.keys())}).data),
         }
-    ).swap_dims({'features':'feature', 'tracks':'track', 'cells':'cell'}
+
     ).set_coords(['feature', 'cell', 'track'])
+    
     
     # Clean up a couple other things. This could be fixed above, too...
     test['feature_area'] = test.feature_area/(.5*.5) # Undo the conversion to km^2
-    test['feature_flash_count_area_LE_4km'] = test.feature_area_LE4km
+    test['feature_flash_count_area_LE_4km'] = test.feature_area_LE_4km
     test['feature_flash_count_area_GT_4km'] = test.feature_area_GT_4km
-    test = test.drop_vars(('feature_area_LE4km','feature_area_GT_4km'))
+    test = test.drop_vars(('feature_area_LE_4km','feature_area_GT_4km'))
 
     # -1 was being used insteaed of 0. For these variables, we want zero since it
     # indicates the value of the observed quantity, not the absence of a measurement.

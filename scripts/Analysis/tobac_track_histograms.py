@@ -446,6 +446,7 @@ def main(args):
 
                          'feature_zdrcol_total', 'feature_kdpcol_total',
                           # ... will be area average of the integral along the vertical dimension, normalized by track duration, so proportional to feature_*_mean.
+                         'feature_zdrwt_total', 'feature_kdpwt_total',
 
                          'feature_zdrcol_mean', 'feature_kdpcol_mean',
                           # ... will be the average value along the vertical dimension, per unit area,normalized by track duration.
@@ -478,6 +479,9 @@ def main(args):
     mean_area = 1600.0 # combo.feature_area.mean().values
     mean_duration_sec = 3600.0 # combo.track_duration.mean().values.astype('timedelta64[s]').astype(float)
 
+    # for the altitude-weighted variables, also normalize by the maximum magnitude of a weight.
+    alt_weight_max = 20000
+    
     var_bins= dict(
         feature_flash_count = ('Flash count', 
                                powers_two),
@@ -507,6 +511,12 @@ def main(args):
         feature_kdpcol_total_area_time_norm = (r'Area average of the integral of $K_{DP}$ along the vertical dimension'
                                           '\nin each feature (grid box count),normalized by track duration',
                                     powers_two / mean_area / mean_duration_sec),
+        feature_zdrwt_total_area_time_norm = (r'Area average of the integral of $Z_{DR}$ along the vertical dimension weighted by altitude'
+                                          '\nin each feature (grid box count),normalized by track duration',
+                                    powers_two / mean_area / mean_duration_sec * alt_weight_max),
+        feature_kdpwt_total_area_time_norm = (r'Area average of the integral of $K_{DP}$ along the vertical dimension weighted by altitude'
+                                          '\nin each feature (grid box count),normalized by track duration',
+                                    powers_two / mean_area / mean_duration_sec * alt_weight_max),
 
         feature_nearby_count_20km_area_time_norm = (r'Count of all nearby features along track within 20 km,'
                                                     '\nnormalized by feature area and track duration.',
@@ -524,9 +534,10 @@ def main(args):
     raw_var_histos = {}
     for var, (description, bins) in var_bins.items():
         data = summed_features[var]
-        non_zero = (data > 0)
+        non_zero = (data > 0) & np.isfinite(data)
         counts, bins = np.histogram(data, bins=bins)    
         percentiles[var] = np.percentile(data[non_zero], percentiles['thresholds'])
+        print(var, percentiles[var])
         raw_var_histos[var] = counts
 
     all_joint_var_combos = list(combinations(var_bins.keys(),2))
