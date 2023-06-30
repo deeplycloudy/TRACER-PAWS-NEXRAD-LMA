@@ -22,7 +22,7 @@ export ONERADARGRID=`ls -t /efs/tracer/NEXRAD/$DATE/KHGX2022*grid.nc | head -n1`
 
 # kernprof -l /home/jovyan/code/TRACER-PAWS-NEXRAD-LMA/scripts/Analysis/ecb_tobac_timseries.py \
 # MALLOC_TRIM_THRESHOLD_=0 python /home/jovyan/code/TRACER-PAWS-NEXRAD-LMA/scripts/Analysis/ecb_tobac_timseries.py \
-MALLOC_TRIM_THRESHOLD_=0 echo python /home/jovyan/efs/Jupyter_NBs/TRACER-PAWS-NEXRAD-LMA/scripts/Analysis/ecb_tobac_timseries.py \
+MALLOC_TRIM_THRESHOLD_=0 python /home/jovyan/efs/Jupyter_NBs/TRACER-PAWS-NEXRAD-LMA/scripts/Analysis/ecb_tobac_timseries.py \
 --path=/home/jovyan/efs/tracer/NEXRAD/$DATE/ \
 --tobacpath=/home/jovyan/efs/tracer/NEXRAD/tobac_Save_$DATE/ \
 --lmapath=/home/jovyan/efs/tracer/LIGHTNING/$LMAMONTH/6sensor_minimum/ \
@@ -42,7 +42,7 @@ MALLOC_TRIM_THRESHOLD_=0 echo python /home/jovyan/efs/Jupyter_NBs/TRACER-PAWS-NE
 # |________________________________
 #                90 km
 
-echo python /home/jovyan/efs/Jupyter_NBs/TRACER-PAWS-NEXRAD-LMA/scripts/Analysis/tobac_track_histograms.py \
+python /home/jovyan/efs/Jupyter_NBs/TRACER-PAWS-NEXRAD-LMA/scripts/Analysis/tobac_track_histograms.py \
   --trackpath=/efs/tracer/NEXRAD/tobac_Save_$DATE/Track_features_merges.nc \
   --timeseriespath=/efs/tracer/NEXRAD/tobac_Save_$DATE/timeseries_data_melt$MELTM.nc \
   --referencegridpath=$ONERADARGRID \

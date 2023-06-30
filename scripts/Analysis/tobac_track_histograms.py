@@ -437,18 +437,18 @@ def main(args):
     vars_to_normalize = ['feature_flash_count', 
                          # when normalized ... will be the flash rate per unit area per unit time of the whole track.
 
-                         'feature_zdrvol', 'feature_kdpvol', 
+                         'feature_zdrvol', 'feature_kdpvol', 'feature_rhvdeficitvol', 
                           # when normalized ... will be an average column depth, normalized by track duration.
 
-                         'feature_zdrcol', 'feature_kdpcol', 
+                         'feature_zdrcol', 'feature_kdpcol', 'feature_rhvdeficitcol',
                           # ... will be a max divided by an area, normalized by track duration.. Larger areas will make strong Kdp values stand out less, 
                           # which is fine for our purposes, where we want to highlight relatively small, isolated cells.
 
-                         'feature_zdrcol_total', 'feature_kdpcol_total',
+                         'feature_zdrcol_total', 'feature_kdpcol_total', 'feature_rhvdeficitcol_total',
                           # ... will be area average of the integral along the vertical dimension, normalized by track duration, so proportional to feature_*_mean.
-                         'feature_zdrwt_total', 'feature_kdpwt_total',
+                         'feature_zdrwt_total', 'feature_kdpwt_total', 'feature_rhvdeficitwt_total',
 
-                         'feature_zdrcol_mean', 'feature_kdpcol_mean',
+                         'feature_zdrcol_mean', 'feature_kdpcol_mean', 'feature_rhvdeficitcol_mean',
                           # ... will be the average value along the vertical dimension, per unit area,normalized by track duration.
 
                          'feature_nearby_count_20km',
@@ -489,12 +489,19 @@ def main(args):
                           powers_two),
         feature_kdpcol = (r'Track-total $K_{DP}$ column volume (grid box count)',
                           powers_two),
+        feature_rhvdeficitcol = (r'Track-total $rho_{hv}$ deficit column volume (grid box count)',
+                          powers_two),
+
         feature_flash_count_area_time_norm = (r'Flash count per feature area normalized by track duration',
                                     powers_two / mean_area / mean_duration_sec),
+        
         feature_zdrvol_area_time_norm = (r'Sum along track of $Z_{DR}$ average column depth at each time'
                                           '\n(grid box count),normalized by track duration',
                                     powers_two / mean_area / mean_duration_sec),
         feature_kdpvol_area_time_norm = (r'Sum along track of $K_{DP}$ average column depth at each time'
+                                         '\n(grid box count), normalized by track duration',
+                                    powers_two / mean_area / mean_duration_sec),
+        feature_rhvdeficitvol_area_time_norm = (r'Sum along track of $rho_{hv}$ deficit average column depth at each time'
                                          '\n(grid box count), normalized by track duration',
                                     powers_two / mean_area / mean_duration_sec),
 
@@ -504,6 +511,10 @@ def main(args):
         feature_kdpcol_area_time_norm = (r'Sum along track of max(integrated $K_{DP}$ along one grid box column)'
                                           '\nin each feature (grid box count),normalized by track area and duration',
                                     powers_two / mean_area / mean_duration_sec),
+        feature_rhvdeficitcol_area_time_norm = (r'Sum along track of max(integrated $rho_{hv}$ deficit along one grid box column)'
+                                          '\nin each feature (grid box count),normalized by track area and duration',
+                                    powers_two / mean_area / mean_duration_sec),
+
 
         feature_zdrcol_total_area_time_norm = (r'Area average of the integral of $Z_{DR}$ along the vertical dimension'
                                           '\nin each feature (grid box count),normalized by track duration',
@@ -511,10 +522,18 @@ def main(args):
         feature_kdpcol_total_area_time_norm = (r'Area average of the integral of $K_{DP}$ along the vertical dimension'
                                           '\nin each feature (grid box count),normalized by track duration',
                                     powers_two / mean_area / mean_duration_sec),
+        feature_rhvdeficitcol_total_area_time_norm = (r'Area average of the integral of $rho_{hv}$ deficit along the vertical dimension'
+                                          '\nin each feature (grid box count),normalized by track duration',
+                                    powers_two / mean_area / mean_duration_sec),
+        
+        
         feature_zdrwt_total_area_time_norm = (r'Area average of the integral of $Z_{DR}$ along the vertical dimension weighted by altitude'
                                           '\nin each feature (grid box count),normalized by track duration',
                                     powers_two / mean_area / mean_duration_sec * alt_weight_max),
         feature_kdpwt_total_area_time_norm = (r'Area average of the integral of $K_{DP}$ along the vertical dimension weighted by altitude'
+                                          '\nin each feature (grid box count),normalized by track duration',
+                                    powers_two / mean_area / mean_duration_sec * alt_weight_max),
+        feature_rhvdeficitwt_total_area_time_norm = (r'Area average of the integral of $rho_{hv}$ deficit along the vertical dimension weighted by altitude'
                                           '\nin each feature (grid box count),normalized by track duration',
                                     powers_two / mean_area / mean_duration_sec * alt_weight_max),
 

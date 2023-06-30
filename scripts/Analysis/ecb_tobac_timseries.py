@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-#MODIEFIED 20230502: KNB
+# MODIFIED 
+# 20230502: KNB
+# 20230630: ECB
 
 import argparse
 
@@ -391,6 +393,7 @@ def main(args):
 
     ref = 10
     rhv = 0.9
+    rhv_col_thresh = 0.98
     kdp_min = 0.75
     zdr_min = 1.0
     # This is the qc'd version of KDP and ZDR above threshold *regardless* of frame. It is computed lazily, so no penalty for doing it over the whole dataset.
@@ -398,10 +401,19 @@ def main(args):
     #radar_good = (data["cross_correlation_ratio"] >= rhv) & (
     #    data["reflectivity"] >= ref
     #)
+    # 20230630 Add back in threshold on large reflectivity values to ensure no spurious values at cloud edge in low SNR.
+    # Even if the 2D features are thresholdled on 15 dBZ, the actual 3D grids within those features can have
+    # low reflectivity at cloud top.
+    zh_large = (data["reflectivity"] >= ref)
+    
     kdp_large = (data["KDP_CSU"] >= kdp_min)
-    kdp_qc = data["KDP_CSU"].where(kdp_large)
+    kdp_qc = data["KDP_CSU"].where(kdp_large & zh_large)
     zdr_large = (data["differential_reflectivity"] >= zdr_min)
-    zdr_qc = data["differential_reflectivity"].where(zdr_large)
+    zdr_qc = data["differential_reflectivity"].where(zdr_large & zh_large)
+    # June 30 2023: add RHV deficit. Deficit is the value below 1.0 of any values below the chosen threshold.
+    # Guarantees positive values since we ensure we only use pixels with values less than 1.0.
+    rhv_small = (data["cross_correlation_ratio"] <= rhv_col_thresh)
+    rhv_deficit_qc = (1.0 - data["cross_correlation_ratio"]).where(zh_large & rhv_small)
 
     deltax = data["x"][1:].values - data["x"][:-1].values
     deltaz = data["z"][1:].values - data["z"][:-1].values
@@ -431,17 +443,22 @@ def main(args):
 
     feature_zdrvol = dict()
     feature_kdpvol = dict()
+    feature_rhvdeficitvol = dict()
     flash_count_arr = dict()
     area_LE_4km = dict()
     area_GT_4km = dict()
     feature_zdrcol_max = dict()
     feature_kdpcol_max = dict()
+    feature_rhvdeficitcol_max = dict()
     feature_zdrcol_mean = dict()
     feature_kdpcol_mean = dict()
+    feature_rhvdeficitcol_mean = dict()
     feature_zdrcol_total = dict()
     feature_kdpcol_total = dict()
+    feature_rhvdeficitcol_total = dict()
     feature_zdrwcol_total = dict()
     feature_kdpwcol_total = dict()
+    feature_rhvdeficitwcol_total = dict()
     x_mesh,z_mesh,y_mesh = np.meshgrid(data['x'],data['z'],data['y'])
     rhgt = (
         np.array(
@@ -482,7 +499,7 @@ def main(args):
         * 1000.0
     )
 
-    # Find the indicie in rhgt that correponds to the melting level given in the command line
+    # Find the index in rhgt that correponds to the melting level given in the command line
     meltlev = args.meltinglev*1000.0
     ind2=np.argmin(np.absolute(rhgt - meltlev)) #8
     frzlev = args.freezinglev*1000.0 - 1000.0
@@ -500,17 +517,32 @@ def main(args):
 
         # if i==2:
         #     prev_snapshot = tracemalloc.take_snapshot()
+        
+        # By this point, we only have one time and the vertical dimension is only the mixed phase.
+        # That should fit in memory with no problem.
+        # Force compute to put these grids in memory for fast reuse in later steps.
+        # This was not too slow before we added rhvdeficit, but the subtraction from 1 seems
+        # to have really slowed it down.
+        zdr_qc_here = zdr_qc[i, ind2 : indfrz, :, :].compute()
+        kdp_qc_here = kdp_qc[i, ind2 : indfrz, :, :].compute()
+        rhv_deficit_qc_here = rhv_deficit_qc[i, ind2 : indfrz, :, :].compute()
+        z_weight_here = (z_mesh[ind2:indfrz,:,:]-rhgt[ind2])
 
-        zdrvol = (zdr_qc[i, ind2 : indfrz, :, :]).count(dim="z").compute()
-        kdpvol = (kdp_qc[i, ind2 : indfrz, :, :]).count(dim="z").compute()
-        zdrcol = (zdr_qc[i, ind2 : indfrz, :, :]).sum(dim="z").compute()
-        kdpcol = (kdp_qc[i, ind2 : indfrz, :, :]).sum(dim="z").compute()
-        kdpwcol = (kdp_qc[i,ind2 : indfrz ,:,:]*(z_mesh[ind2:indfrz,:,:]-rhgt[ind2])).sum(dim="z").compute() #using the nearest grid box height to the melting level instead of the exact melting level to avoid negative height values.
-        zdrwcol = (zdr_qc[i,ind2 : indfrz ,:,:]*(z_mesh[ind2:indfrz,:,:]-rhgt[ind2])).sum(dim="z").compute()
+        zdrvol = (zdr_qc_here).count(dim="z").compute()
+        kdpvol = (kdp_qc_here).count(dim="z").compute()
+        rhvdeficitvol = (rhv_deficit_qc_here).count(dim="z").compute()
+        zdrcol = (zdr_qc_here).sum(dim="z").compute()
+        kdpcol = (kdp_qc_here).sum(dim="z").compute()
+        rhvdeficitcol = (rhv_deficit_qc_here).sum(dim="z").compute()
+        # weights use the nearest grid box height to the melting level instead of the exact melting level to avoid negative height values.
+        kdpwcol = (kdp_qc_here*z_weight_here).sum(dim="z").compute() 
+        zdrwcol = (zdr_qc_here*z_weight_here).sum(dim="z").compute()
+        rhvdeficitwcol = (rhv_deficit_qc_here*z_weight_here).sum(dim="z").compute()
+        
         ids = np.where(xrdata["feature_time_index"].values == i)
         ids = xrdata["feature"].values[ids]
         features_this_frame = xrdata["segmentation_mask"].data[i, :, :]
-
+        
         
         for nid, f in enumerate(ids):
             print(f)
@@ -527,6 +559,11 @@ def main(args):
                 * grid_box_vol
             )
 
+            feature_rhvdeficitvol[f] = (
+                rhvdeficitvol.where(this_feature, other=0.0).sum().values
+                * grid_box_vol
+            )
+
             feature_kdpcol_max[f] = kdpcol.where(
                 this_feature, other=0.0
             ).values.max()
@@ -535,16 +572,22 @@ def main(args):
                 this_feature, other=0.0
             ).values.max()
             
+            feature_rhvdeficitcol_max[f] = rhvdeficitcol.where(
+                this_feature, other=0.0
+            ).values.max()
+            
 
             feature_kdpcol_mean[f] = np.nanmean(
                 kdpcol.where(this_feature, other=0.0).values
             )
             
-
             feature_zdrcol_mean[f] = np.nanmean(
                 zdrcol.where(this_feature, other=0.0).values
             )
             
+            feature_rhvdeficitcol_mean[f] = np.nanmean(
+                rhvdeficitcol.where(this_feature, other=0.0).values
+            )
 
             feature_kdpcol_total[f] = kdpcol.where(
                 this_feature, other=0.0
@@ -553,12 +596,20 @@ def main(args):
             feature_zdrcol_total[f] = zdrcol.where(
                 this_feature, other=0.0
             ).values.sum()
-            
+
+            feature_rhvdeficitcol_total[f] = rhvdeficitcol.where(
+                this_feature, other=0.0
+            ).values.sum()
+
             feature_zdrwcol_total[f] = zdrwcol.where(
                 this_feature, other=0.0
             ).values.sum()
             
             feature_kdpwcol_total[f] = kdpwcol.where(
+                this_feature, other=0.0
+            ).values.sum()
+            
+            feature_rhvdeficitwcol_total[f] = rhvdeficitwcol.where(
                 this_feature, other=0.0
             ).values.sum()
 
@@ -666,14 +717,19 @@ def main(args):
             "feature_maxrefl": (feature_dim, xrdata["max_reflectivity"].values),
             "feature_zdrvol": (feature_dim, xr.DataArray(list(feature_zdrvol.values()), coords={'feature':list(feature_zdrvol.keys())}).data),
             "feature_kdpvol": (feature_dim, xr.DataArray(list(feature_kdpvol.values()), coords={'feature':list(feature_kdpvol.keys())}).data),
+            "feature_rhvdeficitvol": (feature_dim, xr.DataArray(list(feature_rhvdeficitvol.values()), coords={'feature':list(feature_rhvdeficitvol.keys())}).data),
             "feature_zdrcol": (feature_dim, xr.DataArray(list(feature_zdrcol_max.values()), coords={'feature':list(feature_zdrcol_max.keys())}).data),
             "feature_kdpcol": (feature_dim, xr.DataArray(list(feature_kdpcol_max.values()), coords={'feature':list(feature_kdpcol_max.keys())}).data),
+            "feature_rhvdeficitcol": (feature_dim, xr.DataArray(list(feature_rhvdeficitcol_max.values()), coords={'feature':list(feature_rhvdeficitcol_max.keys())}).data),
             "feature_zdrcol_mean": (feature_dim, xr.DataArray(list(feature_zdrcol_mean.values()), coords={'feature':list(feature_zdrcol_mean.keys())}).data),
             "feature_kdpcol_mean": (feature_dim, xr.DataArray(list(feature_kdpcol_mean.values()), coords={'feature':list(feature_kdpcol_mean.keys())}).data),
+            "feature_rhvdeficitcol_mean": (feature_dim, xr.DataArray(list(feature_rhvdeficitcol_mean.values()), coords={'feature':list(feature_rhvdeficitcol_mean.keys())}).data),
             "feature_zdrcol_total": (feature_dim, xr.DataArray(list(feature_zdrcol_total.values()), coords={'feature':list(feature_zdrcol_total.keys())}).data),
             "feature_kdpcol_total": (feature_dim, xr.DataArray(list(feature_kdpcol_total.values()), coords={'feature':list(feature_kdpcol_total.keys())}).data),
+            "feature_rhvdeficitcol_total": (feature_dim, xr.DataArray(list(feature_rhvdeficitcol_total.values()), coords={'feature':list(feature_rhvdeficitcol_total.keys())}).data),
             "feature_zdrwt_total": (feature_dim, xr.DataArray(list(feature_zdrwcol_total.values()), coords={'feature':list(feature_zdrwcol_total.keys())}).data),
             "feature_kdpwt_total": (feature_dim, xr.DataArray(list(feature_kdpwcol_total.values()), coords={'feature':list(feature_kdpwcol_total.keys())}).data),
+            "feature_rhvdeficitwt_total": (feature_dim, xr.DataArray(list(feature_rhvdeficitwcol_total.values()), coords={'feature':list(feature_rhvdeficitwcol_total.keys())}).data),
             "feature_flash_count": (feature_dim, xr.DataArray(list(flash_count_arr.values()), coords={'feature':list(flash_count_arr.keys())}).data),
             "feature_area_LE_4km": (feature_dim, xr.DataArray(list(area_LE_4km.values()), coords={'feature':list(area_LE_4km.keys())}).data),
             "feature_area_GT_4km": (feature_dim, xr.DataArray(list(area_GT_4km.values()), coords={'feature':list(area_GT_4km.keys())}).data),
