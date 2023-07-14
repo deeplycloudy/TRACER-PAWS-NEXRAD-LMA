@@ -14,7 +14,7 @@ Site is a string NEXRAD location
 
 Example
 =======
-python knb_tobac_tracking.py --path="/archive/TRACER_processing/JUNE/20220602/" --threshold=15 --speed=1.0 --site=KHGX --type=NEXRAD" 
+python knb_tobac_tracking.py --path="/archive/TRACER_processing/JUNE/20220602/" --threshold=15 --speed=1.0 --site=KHGX --type=NEXRAD --Gauss_Smooth=False" 
 
 
 
@@ -41,6 +41,9 @@ def create_parser():
     parser.add_argument('--type', metavar='data type', required=True,
                         dest='data_type', action='store',
                         help='Datat name type, e.g., NEXRAD, POLARRIS, NUWRF')
+    parser.add_argument('--enable_Gauss_Smooth', action="store_true", required=False, dest = 'Gauss_Smooth')#,
+                       # help = "Turn on Gaussian Smoothing before tracking, default is off",type = bool,)
+    parser.set_defaults(enable_Gauss_Smooth=False)
     return parser
 
 # End parsing #
@@ -67,8 +70,8 @@ from scipy.spatial import KDTree
 # %matplotlib widget
 import tobac
 from tobac.merge_split import merge_split_MEST
-from tobac.utils import standardize_track_dataset
-from tobac.utils import compress_all
+# from tobac.utils import standardize_track_dataset
+# from tobac.utils import compress_all
 
 # Disable a couple of warnings:
 import warnings
@@ -87,6 +90,143 @@ try:
 except ImportError:
     _PYPROJ_AVAILABLE = False
 
+
+
+def standardize_track_dataset(TrackedFeatures, Mask, Projection=None):
+    """
+    Combine a feature mask with the feature data table into a common dataset.
+
+    returned by tobac.segmentation
+    with the TrackedFeatures dataset returned by tobac.linking_trackpy.
+
+    Also rename the variables to be more desciptive and comply with cf-tree.
+
+    Convert the default cell parent ID  to an integer table.
+
+    Add a cell dimension to reflect
+
+    Projection is an xarray DataArray
+
+    TODO: Add metadata attributes
+
+    Parameters
+    ----------
+    TrackedFeatures : xarray.core.dataset.Dataset
+        xarray dataset of tobac Track information, the xarray dataset returned by tobac.tracking.linking_trackpy
+
+    Mask: xarray.core.dataset.Dataset
+        xarray dataset of tobac segmentation mask information, the xarray dataset returned
+        by tobac.segmentation.segmentation
+
+
+    Projection : xarray.core.dataarray.DataArray, default = None
+        array.DataArray of the original input dataset (gridded nexrad data for example).
+        If using gridded nexrad data, this can be input as: data['ProjectionCoordinateSystem']
+        An example of the type of information in the dataarray includes the following attributes:
+        latitude_of_projection_origin :29.471900939941406
+        longitude_of_projection_origin :-95.0787353515625
+        _CoordinateTransformType :Projection
+        _CoordinateAxes :x y z time
+        _CoordinateAxesTypes :GeoX GeoY Height Time
+        grid_mapping_name :azimuthal_equidistant
+        semi_major_axis :6370997.0
+        inverse_flattening :298.25
+        longitude_of_prime_meridian :0.0
+        false_easting :0.0
+        false_northing :0.0
+
+    Returns
+    -------
+
+    ds : xarray.core.dataset.Dataset
+        xarray dataset of merged Track and Segmentation Mask datasets with renamed variables.
+
+    """
+    import xarray as xr
+
+    feature_standard_names = {
+        # new variable name, and long description for the NetCDF attribute
+        "frame": (
+            "feature_time_index",
+            "positional index of the feature along the time dimension of the mask, from 0 to N-1",
+        ),
+        "hdim_1": (
+            "feature_hdim1_coordinate",
+            "position of the feature along the first horizontal dimension in grid point space; a north-south coordinate for dim order (time, y, x)."
+            "The numbering is consistent with positional indexing of the coordinate, but can be"
+            "fractional, to account for a centroid not aligned to the grid.",
+        ),
+        "hdim_2": (
+            "feature_hdim2_coordinate",
+            "position of the feature along the second horizontal dimension in grid point space; an east-west coordinate for dim order (time, y, x)"
+            "The numbering is consistent with positional indexing of the coordinate, but can be"
+            "fractional, to account for a centroid not aligned to the grid.",
+        ),
+        "idx": ("feature_id_this_frame",),
+        "num": (
+            "feature_grid_cell_count",
+            "Number of grid points that are within the threshold of this feature",
+        ),
+        "threshold_value": (
+            "feature_threshold_max",
+            "Feature number within that frame; starts at 1, increments by 1 to the number of features for each frame, and resets to 1 when the frame increments",
+        ),
+        "feature": (
+            "feature",
+            "Unique number of the feature; starts from 1 and increments by 1 to the number of features",
+        ),
+        "time": (
+            "feature_time",
+            "time of the feature, consistent with feature_time_index",
+        ),
+        "timestr": (
+            "feature_time_str",
+            "String representation of the feature time, YYYY-MM-DD HH:MM:SS",
+        ),
+        "projection_y_coordinate": (
+            "feature_projection_y_coordinate",
+            "y position of the feature in the projection given by ProjectionCoordinateSystem",
+        ),
+        "projection_x_coordinate": (
+            "feature_projection_x_coordinate",
+            "x position of the feature in the projection given by ProjectionCoordinateSystem",
+        ),
+        "lat": ("feature_latitude", "latitude of the feature"),
+        "lon": ("feature_longitude", "longitude of the feature"),
+        "ncells": (
+            "feature_ncells",
+            "number of grid cells for this feature (meaning uncertain)",
+        ),
+        "areas": ("feature_area",),
+        "isolated": ("feature_isolation_flag",),
+        "num_objects": ("number_of_feature_neighbors",),
+        "cell": ("feature_parent_cell_id",),
+        "time_cell": ("feature_parent_cell_elapsed_time",),
+        "segmentation_mask": ("2d segmentation mask",),
+    }
+    new_feature_var_names = {
+        k: feature_standard_names[k][0]
+        for k in feature_standard_names.keys()
+        if k in TrackedFeatures.variables.keys()
+    }
+
+    #     TrackedFeatures = TrackedFeatures.drop(["cell_parent_track_id"])
+    # Combine Track and Mask variables. Use the 'feature' variable as the coordinate variable instead of
+    # the 'index' variable and call the dimension 'feature'
+    ds = xr.merge(
+        [
+            TrackedFeatures.swap_dims({"index": "feature"})
+            .drop("index")
+            .rename_vars(new_feature_var_names),
+            Mask,
+        ]
+    )
+
+    # Add the projection data back in
+    if Projection is not None:
+        ds["ProjectionCoordinateSystem"] = Projection
+
+    return ds
 
 def cartesian_to_geographic_aeqd(x, y, lon_0, lat_0, R=6370997.0):
     """
@@ -238,6 +378,41 @@ def parse_grid_datetime(my_ds):
     )
 
 
+
+def compress_all(nc_grids, min_dims=2, comp_level=4):
+    """
+    The purpose of this subroutine is to compress the netcdf variables as they are saved.
+    This does not change the data, but sets netcdf encoding parameters.
+    We allocate a minimum number of dimensions as variables with dimensions
+    under the minimum value do not benefit from tangibly from this encoding.
+
+    Parameters
+    ----------
+    nc_grids : xarray.core.dataset.Dataset
+        Xarray dataset that is intended to be exported as netcdf
+
+    min_dims : integer
+        The minimum number of dimesnions, in integer value, a variable must have in order
+        set the netcdf compression encoding.
+    comp_level : integer
+        The level of compression. Default values is 4.
+
+    Returns
+    -------
+    nc_grids : xarray.core.dataset.Dataset
+        Xarray dataset with netcdf compression encoding for variables with two (2) or more dimensions
+
+    """
+
+    for var in nc_grids:
+        if len(nc_grids[var].dims) >= min_dims:
+            # print("Compressing ", var)
+            nc_grids[var].encoding["zlib"] = True
+            nc_grids[var].encoding["complevel"] = comp_level
+            nc_grids[var].encoding["contiguous"] = False
+    return nc_grids
+
+
 """ X-Array based TINT I/O module. """
 
 import xarray as xr
@@ -254,7 +429,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     
-
+    print(args.Gauss_Smooth)
     #NEXRAD
     if args.data_type == 'NEXRAD':
     
@@ -264,6 +439,7 @@ if __name__ == '__main__':
         bad_refl = data["reflectivity"] < 10
         bad=bad_rhv & bad_refl
         maxrefl = data["reflectivity"].where(~bad, np.nan).max(axis=1)
+
         ts = pd.to_datetime(data['time'][0].values)
         date = ts.strftime('%Y%m%d')
 
@@ -375,7 +551,18 @@ if __name__ == '__main__':
             os.makedirs(plot_dir)
 
 
-
+    if args.Gauss_Smooth == True:
+        print("Gausian Smoothing is enabled on maxrefl Data")
+        #STEP TO SMOOTH REFLECTIVITY. The Kernel size along each axis is 2*radius + 1 
+        from scipy.ndimage import gaussian_filter
+        maxrefl.shape
+        blurr_maxrefl = np.zeros(maxrefl.shape)
+        blurr_maxrefl.shape
+        for i,times in enumerate(maxrefl['time'].values):
+            blurr_maxrefl[i,:,:] = gaussian_filter(maxrefl[i,:,:],1,radius = 2)
+            maxrefl.values = blurr_maxrefl
+    else:
+        print("Gausian Smoothing is disabled on maxrefl Data")
 
     # Dictionary containing keyword options (could also be directly given to the function)
     parameters_features = {}
@@ -496,4 +683,3 @@ if __name__ == '__main__':
     both_ds.to_netcdf(os.path.join(savedir, "Track_features_merges.nc"))
  
     print("tobac completed")
-

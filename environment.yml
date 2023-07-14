@@ -10,8 +10,8 @@ dependencies:
 - numpy
 - pandas
 - pip
-- python=3.7
-- scipy
+- python=3.8
+- scipy=>=1.10
 - xarray
 - pyproj
 - scikit-learn
