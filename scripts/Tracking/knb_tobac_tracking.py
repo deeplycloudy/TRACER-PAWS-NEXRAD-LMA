@@ -14,7 +14,7 @@ Site is a string NEXRAD location
 
 Example
 =======
-python knb_tobac_tracking.py --path="/archive/TRACER_processing/JUNE/20220602/" --threshold=15 --speed=1.0 --site=KHGX --type=NEXRAD --Gauss_Smooth=False" 
+python knb_tobac_tracking.py --path="/archive/TRACER_processing/JUNE/20220602/" --threshold=15 --speed=1.0 --site=KHGX --type=NEXRAD --enable_Gauss_Smooth 
 
 
 
