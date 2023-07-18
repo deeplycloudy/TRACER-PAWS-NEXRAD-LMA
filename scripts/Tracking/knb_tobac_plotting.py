@@ -15,7 +15,7 @@ Site is a string NEXRAD location
 Example
 =======
 python knb_tobac_plotting.py --path="/archive/TRACER_processing/JUNE/20220602/" 
-        --tobacpath="/archive/TRACER_processing/JUNE/20220602/tobac_Save_20220602/" --type="NEXRAD" 
+        --tobacpath="/archive/TRACER_processing/JUNE/20220602/tobac_Save_20220602/" --type='NEXRAD' --lat=29.4719 --lon=-95.0792
 
 
 """
@@ -35,6 +35,12 @@ def create_parser():
     parser.add_argument('--type', metavar='data type', required=True,
                         dest='data_type', action='store',
                         help='Datat name type, e.g., NEXRAD, POLARRIS, NUWRF')
+    parser.add_argument('--lat', metavar='lat location for plot', required=True,
+                        dest='plot_lat', action='store',type=float, 
+                        help='The latitude center for plotting')
+    parser.add_argument('--lon', metavar='lon location for plot', required=True,
+                        dest='plot_lon', action='store',type=float, 
+                        help='The longitude center for plotting')
     return parser
 
 # End parsing #
@@ -451,10 +457,10 @@ def time_in_range(start, end, x):
         return start <= x or x <= end
 
 
-def plot(t_index, xrdata, max_refl, ncgrid, ind=None):
+def plot(t_index, xrdata, max_refl, ncgrid, grid_lat, grid_lon, ind=None):
     # Get the data
-#     hsv_ctr_lat, hsv_ctr_lon = 29.4719, -95.0792
-    hsv_ctr_lat, hsv_ctr_lon = 34.93055725, -86.08361053
+    hsv_ctr_lat, hsv_ctr_lon = grid_lat, grid_lon #29.4719, -95.0792
+   # hsv_ctr_lat, hsv_ctr_lon = 34.93055725, -86.08361053
     #     hsv_ctr_lat, hsv_ctr_lon = 33.89691544, -88.32919312
 
     refl = max_refl[t_index, :, :]
@@ -642,7 +648,7 @@ if __name__ == '__main__':
             time_index = i
             fig = plt.figure(figsize=(9, 9))
             fig.set_canvas(plt.gcf().canvas)
-            plot(time_index, both_ds, maxrefl, nc_grid)
+            plot(time_index, both_ds, maxrefl, nc_grid,args.plot_lat, args.plot_lon)
             fig.savefig(plot_dir + date+"_tobac_"+ str(time_index) +".png")
             plt.close(fig)
 
@@ -726,6 +732,6 @@ if __name__ == '__main__':
             time_index = i
             fig = plt.figure(figsize=(9,9))
             fig.set_canvas(plt.gcf().canvas)
-            plot(time_index,both_ds,maxrefl,nc_grid)
+            plot(time_index,both_ds,maxrefl,nc_grid,args.plot_lat, args.plot_lon)
             fig.savefig(plot_dir + date+"_tobac_NUWRF_"+str(time_index)+".png")
             plt.close(fig)
