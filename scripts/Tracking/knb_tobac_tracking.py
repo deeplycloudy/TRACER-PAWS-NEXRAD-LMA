@@ -471,6 +471,7 @@ if __name__ == '__main__':
     #FOR NUWRF NOT POLARRIS  
     
         files = sorted(glob(args.path+"wrfout*"))
+        print(files)
         data1 = xarray.open_dataset(files[0])
         drop_list = list(np.sort(list(data1.variables)))
         drop_list = [e for e in drop_list if e not in ('COMDBZ', 'Times','XLAT','XLONG','XTIME')]
