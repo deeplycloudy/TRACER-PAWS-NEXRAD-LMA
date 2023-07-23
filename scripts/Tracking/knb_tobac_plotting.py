@@ -688,7 +688,7 @@ if __name__ == '__main__':
             vmin=-24, vmax=72, extent = [-96,-93,28,30])
 
             fig.colorbar(refplt,fraction=0.046, pad=0.04)
-            i = np.where(refl_mask['segmentation_mask'][j,:,:] > 0)
+            i = np.where(both_ds['segmentation_mask'][j,:,:] > 0)
             y, x = y_mesh[i[0],i[1]],x_mesh[i[0],i[1]]
             imcell2 = ax.scatter(x,y,s = 0.5,c = 'gray', marker = '.',alpha = 0.75)
 
