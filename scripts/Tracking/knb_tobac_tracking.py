@@ -471,7 +471,7 @@ if __name__ == '__main__':
     #FOR NUWRF NOT POLARRIS  
     
         files = sorted(glob(args.path+"wrfout*"))
-        print(files)
+#         print(files)
         data1 = xarray.open_dataset(files[0])
         drop_list = list(np.sort(list(data1.variables)))
         drop_list = [e for e in drop_list if e not in ('COMDBZ', 'Times','XLAT','XLONG','XTIME')]
@@ -495,6 +495,8 @@ if __name__ == '__main__':
         # #HORIZONTAL GRID RESOLUTION, AND TIME RESOLUTION
         dxy = data1.DX/1000.
         dt = data1.DT
+        print(dxy)
+        print(dt)
 
         ts = pd.to_datetime(data['time'][0].values)
         date = ts.strftime('%Y%m%d')
@@ -561,7 +563,7 @@ if __name__ == '__main__':
         blurr_maxrefl.shape
         for i,times in enumerate(maxrefl['time'].values):
             blurr_maxrefl[i,:,:] = gaussian_filter(maxrefl[i,:,:],1,radius = 2)
-            maxrefl.values = blurr_maxrefl
+        maxrefl.values = blurr_maxrefl
     else:
         print("Gausian Smoothing is disabled on maxrefl Data")
 
