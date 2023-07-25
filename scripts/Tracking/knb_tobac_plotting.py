@@ -655,7 +655,7 @@ if __name__ == '__main__':
     if args.data_type == 'NUWRF':
     
         files = sorted(glob(args.path+"wrfout*"))
-        data1 = xarray.open_dataset(files[0])
+        data1 = xr.open_dataset(files[0])
         drop_list = list(np.sort(list(data1.variables)))
         drop_list = [e for e in drop_list if e not in ('COMDBZ', 'Times','XLAT','XLONG','XTIME')]
 
@@ -677,6 +677,7 @@ if __name__ == '__main__':
 
         ref_levels = [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75]
         for j in range(len(maxrefl.time)):
+            date = str(maxrefl['time'][j].values)[:-13]
             time_index = j
             fig, ax = plt.subplots(figsize=(10,10))
             refl = maxrefl[j,:,:].values

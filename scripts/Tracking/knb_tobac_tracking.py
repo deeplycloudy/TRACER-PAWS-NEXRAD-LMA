@@ -377,7 +377,39 @@ def parse_grid_datetime(my_ds):
         year=year, month=month, day=day, hour=hour, minute=minute, second=second
     )
 
+def count_track_neighbors(track_ds, distance_thresholds = (5.0, 10.0, 15.0, 20.0), grid_spacing = 0.5):
+    from scipy.spatial import KDTree
 
+    feature_neighbor_variable_names = []
+
+    # First find the trees corresponding to all features at each time.
+    time_groups = track_ds.groupby('feature_time_index')
+    time_groups.groups.keys()
+    trees_each_time_index = {}
+    for time_idx, group in time_groups:
+        hdim1 = group['feature_hdim1_coordinate'].values*grid_spacing
+        hdim2 = group['feature_hdim2_coordinate'].values*grid_spacing
+        #note hdim1,2 are in km
+        pts = np.vstack((hdim2, hdim1)).T
+        tree = KDTree(pts)
+        trees_each_time_index[time_idx] = tree
+
+    # Now we'll look at each feature in turn, and its neighbors at that time.
+    hdim1 = track_ds['feature_hdim1_coordinate'].values*grid_spacing
+    hdim2 = track_ds['feature_hdim2_coordinate'].values*grid_spacing
+    pts = np.vstack((hdim2, hdim1)).T
+    #note hdim1,2 are in km
+    for distance_threshold in distance_thresholds:
+        num_obj = np.zeros(len(track_ds["feature"].values), dtype=int)
+        for i, ind in enumerate(track_ds["feature"].values):
+            time_idx = track_ds.feature_time_index.values[i]
+            tree = trees_each_time_index[time_idx]
+            # Need to subtract one, since the feature itself is always near (at) the test location
+            num_obj[i]=len(tree.query_ball_point(pts[i],r=distance_threshold)) - 1 
+        this_nearby_var_name = 'feature_nearby_count_{0}km'.format(int(distance_threshold))
+        feature_neighbor_variable_names.append(this_nearby_var_name)
+        track_ds = track_ds.assign(**{this_nearby_var_name:(['feature'], num_obj)})
+    return track_ds
 
 def compress_all(nc_grids, min_dims=2, comp_level=4):
     """
@@ -671,17 +703,8 @@ if __name__ == '__main__':
     ds = standardize_track_dataset(Track, refl_mask)
     both_ds = xarray.merge([ds, d], compat="override")
 
-    hdim1 = both_ds['feature_hdim1_coordinate'].values*0.5
-    hdim2 = both_ds['feature_hdim2_coordinate'].values*0.5
-    pts = np.vstack((hdim2, hdim1)).T
-    tree = KDTree(pts)
-    #note hdim is in km on the grid
-    num_obj = np.zeros(len(both_ds["feature"].values))
-    for i,ind in enumerate(both_ds["feature"].values):
-        num_obj[i]=len(tree.query_ball_point(pts[i],r=5))
-    num_obj = num_obj.astype(int)
-    both_ds = both_ds.assign(feature_nearby_count=(['feature'], num_obj))
-    
+
+    both_ds = count_track_neighbors(both_ds, grid_spacing=dxy)
     both_ds = compress_all(both_ds)
     both_ds.to_netcdf(os.path.join(savedir, "Track_features_merges.nc"))
  
