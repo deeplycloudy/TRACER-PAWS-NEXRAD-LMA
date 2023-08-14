@@ -350,8 +350,6 @@ def track_polarimetry(summed_features,
         track_has_ltg_only = (no_kdp & no_zdr & has_lightning),
     )
     
-    
-    
     #header = ["nothing","zdr","kdp","kdp_zdr","ltg","kdp_zdr_ltg","kdp_ltg","zdr_ltg"]
     #results_row = np.fromiter(map(sum, 
     #                          [has_nothing,has_zdr_only,has_kdp_only,has_zdr_kdp_only,
@@ -409,6 +407,105 @@ def open_track_timeseries_dataset(track_filename, timeseries_filename, reference
     return combo
 
 
+def subdivide_tracks(ds, track_membership):
+    sub_dss = {}
+    
+    # Set up a prunable tree for the track,cell,feature dataset
+    traversal = OneToManyTraversal(ds, 
+        ('track','cell','feature'), 
+        ('cell_parent_track_id', 'feature_parent_cell_id'))
+        
+    all_features_by_track = ds.drop_dims(('x','y','time')).groupby('feature_parent_track_id')
+    all_summed_features = all_features_by_track.sum(dim='feature')
+    
+    sub_dss['track_has_any'] = ds, all_summed_features
+    
+    for kind, membership in track_membership.items():
+        reduced_track_ids = membership.where(membership, drop=True).feature_parent_track_id.values
+        # ds.track[membership].values
+        sub = traversal.reduce_to_entities('track', reduced_track_ids)
+        
+        # Need to recalculate features_by_track now that we've added all variables to combo.
+        if sub.feature_parent_track_id.shape[0] > 0:
+            features_by_track = sub.drop_dims(('x','y','time')).groupby('feature_parent_track_id')
+            summed_features = features_by_track.sum(dim='feature')
+        else:
+            summed_features = None
+        
+        sub_dss[kind] = sub, summed_features
+        
+    return sub_dss
+    
+    
+def percents_and_histos(summed_features, var_bins, percentiles):
+   
+    percentiles_out = percentiles.copy()
+    
+    raw_var_histos = {}
+    for var, (description, bins) in var_bins.items():
+        if summed_features is not None:
+            data = summed_features[var]
+            non_zero = (data > 0) & np.isfinite(data)
+            counts, bins = np.histogram(data, bins=bins)    
+            if non_zero.sum()>0:
+                percentiles_out[var] = np.percentile(data[non_zero], percentiles['thresholds'])
+                raw_var_histos[var] = counts
+            else:
+                percentiles_out[var] = np.nan * np.asarray(percentiles['thresholds'])
+                raw_var_histos[var] = np.zeros((bins.shape[0]-1,), dtype=int)
+        else:
+            percentiles_out[var] = np.nan * np.asarray(percentiles['thresholds'])
+            raw_var_histos[var] = np.zeros((bins.shape[0]-1,), dtype=int)
+        print(var, percentiles_out[var])
+
+    all_joint_var_combos = list(combinations(var_bins.keys(),2))
+
+    # normed_joint_var_combos = [(var1, var2) for (var1, var2) in all_joint_var_combos if ( ('norm' in var1) & ('norm' in var2) )]
+    # total_plot_combinations = len(all_joint_var_combos)
+    # normed_plot_combinations = len(normed_joint_var_combos)
+
+    joint_var_combos = all_joint_var_combos
+
+    all_histos = []
+    for axi, (var1, var2) in enumerate(joint_var_combos):
+        if (not ('norm' in var1)) & (not ('norm' in var2)):
+            continue
+        bins = [var_bins[var1][1], var_bins[var2][1]]
+        if summed_features is not None:
+            h = histogram(summed_features[var1],
+                          summed_features[var2], 
+                          bins=bins)
+            all_histos.append(h.compute())
+        else:
+            # Fake an empty histogram. We confirm this is the right structure to mimic the expected
+            # variable naming by using the following code to see what xhistogram does:
+            # """
+            # from xhistogram.xarray import histogram
+            # import xarray as xr
+            # import numpy as np
+
+            # foo_bin = np.linspace(-4, 4, 20)
+            # bar_bin = foo_bin -2
+            # bins=[foo_bin, bar_bin]
+
+            # nt, nx = 100, 30
+            # da = xr.DataArray(np.random.randn(nt, nx), dims=['time', 'x'],
+            #                   name='foo') # all inputs need a name
+            # db = xr.DataArray(np.random.randn(nt, nx), dims=['time', 'x'],
+            #                   name='bar') - 2
+
+            # h = histogram(da, db, bins=bins)
+            # print(h) # or display h in notebook
+            # """
+            zeros = np.zeros((bins[0].shape[0]-1, bins[1].shape[0]-1,), dtype=int)
+            bin_centers = [0.5 * (bin[:-1] + bin[1:]) for bin in bins] # Ripped straight from xhistogram
+            h = xr.DataArray(zeros,  coords={var1+'_bin':bin_centers[0], var2+'_bin':bin_centers[1]}, 
+                             dims=(var1+'_bin', var2+'_bin'), 
+                             name='_'.join(['histogram', var1, var2]))
+            all_histos.append(h.compute())
+    histo_ds = xr.combine_by_coords(all_histos)
+    
+    return raw_var_histos, histo_ds, percentiles_out
 
 
 def main(args):
@@ -464,13 +561,16 @@ def main(args):
         combo[var+'_area_time_norm'] = combo[var]/combo.feature_area/track_duration_sec
 
 
-    # ### Sum properties and prepare to look at distributions
+    ### Sum properties and prepare to look at distributions
 
     # Need to recalculate features_by_track now that we've added all variables to combo.
     features_by_track = combo.drop_dims(('x','y','time')).groupby('feature_parent_track_id')
     summed_features = features_by_track.sum(dim='feature')
-    
     track_membership, track_counts = track_polarimetry(summed_features, zdr_thresh=0.0, kdp_thresh=0.0, flash_thresh=0.0)
+    
+    subdivided_tracks = subdivide_tracks(combo, track_membership)
+
+    ### Start calculating stats.
     
     pow2 = partial(pow, 2)
     powers_two = np.array([-1, 0] + list(map(pow2, range(20))) )+0.5
@@ -550,59 +650,68 @@ def main(args):
         var_bins[var] = ('Count of all nearby features along track within '+distance, powers_two)
 
     percentiles = dict(thresholds=(5, 50, 95))
-    raw_var_histos = {}
-    for var, (description, bins) in var_bins.items():
-        data = summed_features[var]
-        non_zero = (data > 0) & np.isfinite(data)
-        counts, bins = np.histogram(data, bins=bins)    
-        percentiles[var] = np.percentile(data[non_zero], percentiles['thresholds'])
-        print(var, percentiles[var])
-        raw_var_histos[var] = counts
+    
+    # Moved into function
+#     raw_var_histos = {}
+#     for var, (description, bins) in var_bins.items():
+#         data = summed_features[var]
+#         non_zero = (data > 0) & np.isfinite(data)
+#         counts, bins = np.histogram(data, bins=bins)    
+#         percentiles[var] = np.percentile(data[non_zero], percentiles['thresholds'])
+#         print(var, percentiles[var])
+#         raw_var_histos[var] = counts
 
-    all_joint_var_combos = list(combinations(var_bins.keys(),2))
+#     all_joint_var_combos = list(combinations(var_bins.keys(),2))
 
-    # normed_joint_var_combos = [(var1, var2) for (var1, var2) in all_joint_var_combos if ( ('norm' in var1) & ('norm' in var2) )]
-    # total_plot_combinations = len(all_joint_var_combos)
-    # normed_plot_combinations = len(normed_joint_var_combos)
+#     # normed_joint_var_combos = [(var1, var2) for (var1, var2) in all_joint_var_combos if ( ('norm' in var1) & ('norm' in var2) )]
+#     # total_plot_combinations = len(all_joint_var_combos)
+#     # normed_plot_combinations = len(normed_joint_var_combos)
 
-    joint_var_combos = all_joint_var_combos
+#     joint_var_combos = all_joint_var_combos
 
-    all_histos = []
+#     all_histos = []
 
-    for axi, (var1, var2) in enumerate(joint_var_combos):
-        if (not ('norm' in var1)) & (not ('norm' in var2)):
-            continue
-        bins = [var_bins[var1][1], var_bins[var2][1]]
-        h = histogram(summed_features[var1],
-                      summed_features[var2], 
-                      bins=bins)
-        all_histos.append(h.compute())
+#     for axi, (var1, var2) in enumerate(joint_var_combos):
+#         if (not ('norm' in var1)) & (not ('norm' in var2)):
+#             continue
+#         bins = [var_bins[var1][1], var_bins[var2][1]]
+#         h = histogram(summed_features[var1],
+#                       summed_features[var2], 
+#                       bins=bins)
+#         all_histos.append(h.compute())
 
-    histo_ds = xr.combine_by_coords(all_histos) 
-    histo_ds['grid_time_start'] = combo.time.min()
-    histo_ds['grid_time_end'] = combo.time.max()
-
-    for k, var in raw_var_histos.items():
-        # We can reuse the bins that were already put in the dataset for the 2D histograms
-        bins_coord = k+'_bin'
-        histo_ds[k] = xr.DataArray(var, dims=(bins_coord,))
-        histo_ds[k].attrs["long_name"] = var_bins[k][0]
-
-    percentile_ds = {'percentile_'+k:{"dims":"percentile_thresholds", "data":np.asarray(v)}
-                     for k, v in percentiles.items()}
-    percentile_ds = xr.Dataset.from_dict(percentile_ds)
-    # for var in percentile_ds.data_vars:
-    #     bin_key = var.replace('percentile_', '')
-    #     percentile_ds[var].attrs["long_name"] = var_bins[bin_key][0]
-
-    # Add the track_counts dataframe, which has only one row, here.
-    track_counts = track_counts.to_xarray().rename({'index':'track_count'})
+#     histo_ds = xr.combine_by_coords(all_histos) 
+    # End of move into function
     
     
-    histo_ds = xr.combine_by_coords((histo_ds, percentile_ds, track_counts))
-    histo_ds['track_maximum_distance_km'] = args.khgx_distance_km
+    for kind, (subset_ds, summed_features_subset) in subdivided_tracks.items():
+        print(kind)
+        raw_var_histos, histo_ds, percentiles_out = percents_and_histos(summed_features_subset, var_bins, percentiles)
+    
+        # Add a variable to show time coverage
+        histo_ds['grid_time_start'] = combo.time.min()
+        histo_ds['grid_time_end'] = combo.time.max()
 
-    histo_ds.to_netcdf(os.path.join(args.outdir, "histogram_data_{0}.nc".format(meltlevel_string)))
+        for k, var in raw_var_histos.items():
+            # We can reuse the bins that were already put in the dataset for the 2D histograms
+            bins_coord = k+'_bin'
+            histo_ds[k] = xr.DataArray(var, dims=(bins_coord,))
+            histo_ds[k].attrs["long_name"] = var_bins[k][0]
+
+        percentile_ds = {'percentile_'+k:{"dims":"percentile_thresholds", "data":np.asarray(v)}
+                         for k, v in percentiles_out.items()}
+        percentile_ds = xr.Dataset.from_dict(percentile_ds)
+        # for var in percentile_ds.data_vars:
+        #     bin_key = var.replace('percentile_', '')
+        #     percentile_ds[var].attrs["long_name"] = var_bins[bin_key][0]
+
+        # Add the track_counts dataframe, which has only one row, here.
+        track_counts_out = track_counts.to_xarray().rename({'index':'track_count'})    
+
+        histo_ds = xr.combine_by_coords((histo_ds, percentile_ds, track_counts_out))
+        histo_ds['track_maximum_distance_km'] = args.khgx_distance_km
+
+        histo_ds.to_netcdf(os.path.join(args.outdir, "histogram_data_{1}_{0}.nc".format(meltlevel_string, kind.replace('_','-'))))
     
 if __name__ == "__main__":
     parser = create_parser()
