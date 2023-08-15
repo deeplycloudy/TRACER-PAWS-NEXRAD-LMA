@@ -17,8 +17,6 @@ Example
 =======
 python knb_tobac_plotting.py --path="/archive/TRACER_processing/JUNE/20220602/" 
         --tobacpath="/archive/TRACER_processing/JUNE/20220602/tobac_Save_20220602/" --type='NEXRAD' --lat=29.4719 --lon=-95.0792 --dxy=0.2
-
-
 """
 
 def create_parser():
@@ -657,7 +655,7 @@ if __name__ == '__main__':
 
     if args.data_type == 'NUWRF':
     
-        files = sorted(glob(args.path+"wrfout_d01_2022-08-07_18*00"))
+        files = sorted(glob(args.path+"wrfout*"))
         data1 = xr.open_dataset(files[0])
         drop_list = list(np.sort(list(data1.variables)))
         drop_list = [e for e in drop_list if e not in ('COMDBZ', 'Times','XLAT','XLONG','XTIME')]

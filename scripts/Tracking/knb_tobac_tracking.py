@@ -502,7 +502,7 @@ if __name__ == '__main__':
     
     #FOR NUWRF NOT POLARRIS  
     
-        files = sorted(glob(args.path+"wrfout_d01_2022-08-07_18*00"))
+        files = sorted(glob(args.path+"wrfout*"))
 #         print(files)
         data1 = xarray.open_dataset(files[0])
         drop_list = list(np.sort(list(data1.variables)))
