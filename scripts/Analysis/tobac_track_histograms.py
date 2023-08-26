@@ -438,25 +438,35 @@ def subdivide_tracks(ds, track_membership):
     
     
 def percents_and_histos(summed_features, var_bins, percentiles):
-   
+    
     percentiles_out = percentiles.copy()
     
     raw_var_histos = {}
     for var, (description, bins) in var_bins.items():
         if summed_features is not None:
             data = summed_features[var]
-            non_zero = (data > 0) & np.isfinite(data)
-            counts, bins = np.histogram(data, bins=bins)    
+            finite = np.isfinite(data)
+            pos = (data > 0)
+            non_zero = pos & finite
+            if (~finite).sum() > 0:
+                print("Track has nonfinite values. Is there a divide by zero?")
+                nan_ct = np.isnan(data).sum()
+                nonfinite_ct = (~finite).sum()
+                print(var, "total", data.values.shape[0], "nan", nan_ct.values, "nonfinite", nonfinite_ct.values)
+            counts, bins = np.histogram(data, bins=bins)  
+            # counts needs to be outside the nonzero check, since we want the zero counts. 
+            # nan and inf get dropped by histogram automatically.
+            raw_var_histos[var] = counts 
             if non_zero.sum()>0:
                 percentiles_out[var] = np.percentile(data[non_zero], percentiles['thresholds'])
-                raw_var_histos[var] = counts
+                # raw_var_histos[var] = counts
             else:
                 percentiles_out[var] = np.nan * np.asarray(percentiles['thresholds'])
-                raw_var_histos[var] = np.zeros((bins.shape[0]-1,), dtype=int)
+                # raw_var_histos[var] = np.zeros((bins.shape[0]-1,), dtype=int)
         else:
             percentiles_out[var] = np.nan * np.asarray(percentiles['thresholds'])
             raw_var_histos[var] = np.zeros((bins.shape[0]-1,), dtype=int)
-        print(var, percentiles_out[var])
+        # print(var, percentiles_out[var])
 
     all_joint_var_combos = list(combinations(var_bins.keys(),2))
 
@@ -557,8 +567,14 @@ def main(args):
     # We also want to normalize by duration.
     track_duration_sec = combo.feature_parent_track_duration.values.astype('timedelta64[s]').astype(float)
 
+    # occasionally, a feature_area will be zero (on one day, it was about 1600 out of 30000 features),
+    # which results in a divide by zero here, an infinity for that feature,
+    # and then an infinity for the whole track when summed across features.
+    # set those areas to nan instead of zero.
+    clean_feature_area = combo.feature_area.where(~np.isclose(combo.feature_area, 0.0), other=np.nan)
+    
     for var in vars_to_normalize:
-        combo[var+'_area_time_norm'] = combo[var]/combo.feature_area/track_duration_sec
+        combo[var+'_area_time_norm'] = combo[var]/clean_feature_area/track_duration_sec
 
 
     ### Sum properties and prepare to look at distributions
@@ -573,7 +589,7 @@ def main(args):
     ### Start calculating stats.
     
     pow2 = partial(pow, 2)
-    powers_two = np.array([-1, 0] + list(map(pow2, range(20))) )+0.5
+    powers_two = np.array([-1, 0] + list(map(pow2, range(25))) )+0.5
 
     # Values from the 4 June case, rounded to 40 x 40 km and one hour.
     mean_area = 1600.0 # combo.feature_area.mean().values
@@ -685,7 +701,7 @@ def main(args):
     
     
     for kind, (subset_ds, summed_features_subset) in subdivided_tracks.items():
-        print(kind)
+        # print(kind)
         raw_var_histos, histo_ds, percentiles_out = percents_and_histos(summed_features_subset, var_bins, percentiles)
     
         # Add a variable to show time coverage
