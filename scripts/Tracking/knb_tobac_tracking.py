@@ -14,7 +14,7 @@ Site is a string NEXRAD location
 
 Example
 =======
-python knb_tobac_tracking.py --path="/archive/TRACER_processing/JUNE/20220602/" --threshold=15 --speed=1.0 --site=KHGX --type='NEXRAD' --enable_Gauss_Smooth 
+python knb_tobac_tracking.py --path="/archive/TRACER_processing/JUNE/20220602/" --threshold=15 --speed=1.0 --site=KHGX  --type='NUWRF' --enable_Gauss_Smooth --extra_vars="QNICE","QICE"
 
 
 
@@ -43,6 +43,9 @@ def create_parser():
                         help='Datat name type, e.g., NEXRAD, POLARRIS, NUWRF')
     parser.add_argument('--enable_Gauss_Smooth', action="store_true", required=False, dest = 'Gauss_Smooth')#,
                        # help = "Turn on Gaussian Smoothing before tracking, default is off",type = bool,)
+    parser.add_argument('--extra_vars', action="store", required=False, dest = 'add_var',
+    					help = "Extra vars to pull from NUWRF, default is no extra vars",type =str,
+                       nargs='*')
     parser.set_defaults(enable_Gauss_Smooth=False)
     return parser
 
@@ -500,14 +503,21 @@ if __name__ == '__main__':
     #NUWRF
     if args.data_type == 'NUWRF':
     
-    #FOR NUWRF NOT POLARRIS  
-    
-        files = sorted(glob(args.path+"wrfout*"))
+    #FOR NUWRF NOT POLARRIS
+        if args.add_var:
+            # print(args.add_var[0])
+            vars = args.add_var[0].split(",")
+            # print(vars)
+            args.add_var = tuple(vars)
+            # print(args.add_var)
+            # print(type(args.add_var))
+        good_list = list(flatten(list(('COMDBZ', 'Times','XLAT','XLONG','XTIME') + (args.add_var,))))
+        files = sorted(glob(args.path+'wrfout_d01_2022-08-07_19*00'))
 #         print(files)
         data1 = xarray.open_dataset(files[0])
         drop_list = list(np.sort(list(data1.variables)))
-        drop_list = [e for e in drop_list if e not in ('COMDBZ', 'Times','XLAT','XLONG','XTIME')]
-
+        drop_list = [e for e in drop_list if e not in good_list]
+        print(good_list)
 
 
         import xarray as xr
@@ -523,7 +533,7 @@ if __name__ == '__main__':
         maxrefl = data['COMDBZ']
         maxrefl = maxrefl.drop('XTIME')
         maxrefl = maxrefl.drop('Time')
-
+        print(data)
         # #HORIZONTAL GRID RESOLUTION, AND TIME RESOLUTION
         dxy = data1.DX/1000.
         dt = data1.DT
@@ -665,14 +675,33 @@ if __name__ == '__main__':
             feature_area_i = np.where(mask_i == i)
             areas[i] = len(feature_area_i[0])
             maxfeature_refl[i] = np.nanmax(subrefl[feature_area_i])
-
-
+            
     var = Features["feature"].copy(data=areas[1:])
     var = var.rename("areas")
     var_max = Features["feature"].copy(data=maxfeature_refl[1:])
     var_max = var_max.rename("max_reflectivity")
     Features = xarray.merge([Features, var], compat="override")
     Features = xarray.merge([Features, var_max], compat="override")
+            
+    if args.add_var:
+        print('extra variables, finding the max for each feature')
+        for i in args.add_var:
+            print(i)
+            iarr = np.zeros([(len(Features["index"]) + 1)])
+            maxi = data[str(i)].max(axis=1)
+            for frame_i, features_i in frame_features:
+                mask_i = Mask["segmentation_mask"][frame_i, :, :].values
+                submaxi = maxi[frame_i, :, :].values
+                for j in np.unique(mask_i):
+                    feature_area_i = np.where(mask_i == j)
+                    iarr[j] = np.nanmax(submaxi[feature_area_i])
+
+            var_max = Features["feature"].copy(data=iarr[1:])
+            var_max = var_max.rename("max_"+str(i))
+            Features = xarray.merge([Features, var_max], compat="override")
+
+    	
+
     Features.to_netcdf(os.path.join(savedir, "Features.nc"))
     Mask = Mask.to_array()
     Features_df = Features.to_dataframe()
