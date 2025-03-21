@@ -77,21 +77,30 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
 
-    arq = sorted(glob.glob(args.path+'*.nc'))
-    radar = pyart.io.read_cfradial(arq[0])
-
+    arq = sorted(glob.glob(args.path))#+'VCP12*.nc'))
+    # radar = pyart.io.read_cfradial(arq[0])
+    new_vars = args.path.split('/')
+    print(new_vars)
+    new_vars[3] = 'POLARRIS_GRIDDED'
+    new_vars = new_vars[:-1]
+    #print(new_vars)
+    new_path = "/".join(new_vars)
+    print(new_path)
 
 # In[ ]:
 
 
     filenames = []
     for num, key in enumerate(arq):
+        # if num < 644:
+        #     continue
+
         print(key)
         print('saving grid', num)
         radar = pyart.io.read_cfradial(key)
         grid = get_grid(radar)
         fname = os.path.split(str(key))[1][:-3]
-        name = os.path.join('grid_' + fname + '.nc')
+        name = os.path.join(new_path +'/'+ fname + '_grid2.nc')
         pyart.io.write_grid(name, grid)
         del radar, grid
 

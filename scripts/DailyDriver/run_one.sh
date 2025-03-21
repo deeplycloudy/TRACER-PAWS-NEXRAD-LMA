@@ -22,11 +22,11 @@ export ONERADARGRID=`ls -t /efs/tracer/NEXRAD/$DATE/KHGX2022*grid.nc | head -n1`
 
 # kernprof -l /home/jovyan/code/TRACER-PAWS-NEXRAD-LMA/scripts/Analysis/ecb_tobac_timseries.py \
 # MALLOC_TRIM_THRESHOLD_=0 python /home/jovyan/code/TRACER-PAWS-NEXRAD-LMA/scripts/Analysis/ecb_tobac_timseries.py \
-MALLOC_TRIM_THRESHOLD_=0 python /home/jovyan/efs/Jupyter_NBs/TRACER-PAWS-NEXRAD-LMA/scripts/Analysis/ecb_tobac_timseries.py \
---path=/home/jovyan/efs/tracer/NEXRAD/$DATE/ \
---tobacpath=/home/jovyan/efs/tracer/NEXRAD/tobac_Save_$DATE/ \
---lmapath=/home/jovyan/efs/tracer/LIGHTNING/$LMAMONTH/6sensor_minimum/ \
---meltinglevel=$MELTLEVEL --freezinglevel=$HMGFRZLVL --type="NEXRAD" 
+# MALLOC_TRIM_THRESHOLD_=0 python /home/jovyan/efs/Jupyter_NBs/TRACER-PAWS-NEXRAD-LMA/scripts/Analysis/ecb_tobac_timseries.py \
+# --path=/home/jovyan/efs/tracer/NEXRAD/$DATE/ \
+# --tobacpath=/home/jovyan/efs/tracer/NEXRAD/tobac_Save_$DATE/ \
+# --lmapath=/home/jovyan/efs/tracer/LIGHTNING/$LMAMONTH/6sensor_minimum/ \
+# --meltinglevel=$MELTLEVEL --freezinglevel=$HMGFRZLVL --type="NEXRAD" 
 
 
 # KHGX is 20 km from both CSAPR and the ARM site, and ANC is 65 km. So storms within 60 km of CSAPR are 

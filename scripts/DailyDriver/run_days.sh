@@ -8,11 +8,11 @@ export HMGFRZLVL="10.6"
 # lines to run that day.
 
 export FULLDATE="2022/06/02"
-export MELTLEVEL="4.7"
+# export MELTLEVEL="4.7"
 ./run_one.sh &
 
 export FULLDATE="2022/06/04"
-export MELTLEVEL="4.4"
+# export MELTLEVEL="4.4"
 ./run_one.sh &
 
 # DOES NOT EXIST
@@ -21,7 +21,7 @@ export MELTLEVEL="4.4"
 # ./run_one.sh &
 
 export FULLDATE="2022/06/17"
-export MELTLEVEL="4.6"
+# export MELTLEVEL="4.6"
 ./run_one.sh &
 
 # DOES NOT EXIST
@@ -30,55 +30,55 @@ export MELTLEVEL="4.6"
 # ./run_one.sh &
 
 export FULLDATE="2022/06/22"
-export MELTLEVEL="4.9"
+# export MELTLEVEL="4.9"
 ./run_one.sh &
 
 export FULLDATE="2022/07/02"
-export MELTLEVEL="4.9"
+# export MELTLEVEL="4.9"
 ./run_one.sh &
 
 export FULLDATE="2022/07/06"
-export MELTLEVEL="5.0"
+# export MELTLEVEL="5.0"
 ./run_one.sh &
 
 export FULLDATE="2022/07/12"
-export MELTLEVEL="5.2"
+# export MELTLEVEL="5.2"
 ./run_one.sh &
 
 export FULLDATE="2022/07/13"
-export MELTLEVEL="4.7"
+# export MELTLEVEL="4.7"
 ./run_one.sh &
 
 export FULLDATE="2022/07/14"
-export MELTLEVEL="4.7"
+# export MELTLEVEL="4.7"
 ./run_one.sh &
 
 export FULLDATE="2022/07/28"
-export MELTLEVEL="4.8"
+# export MELTLEVEL="4.8"
 ./run_one.sh &
 
 export FULLDATE="2022/07/29"
-export MELTLEVEL="4.8"
+# export MELTLEVEL="4.8"
 ./run_one.sh &
 
 export FULLDATE="2022/08/01"
-export MELTLEVEL="4.9"
+# export MELTLEVEL="4.9"
 ./run_one.sh &
 
 export FULLDATE="2022/08/03"
-export MELTLEVEL="4.9"
+# export MELTLEVEL="4.9"
 ./run_one.sh &
 
 export FULLDATE="2022/08/02"
-export MELTLEVEL="4.9"
+# export MELTLEVEL="4.9"
 ./run_one.sh &
 
 export FULLDATE="2022/08/06"
-export MELTLEVEL="4.9"
+# export MELTLEVEL="4.9"
 ./run_one.sh &
 
 export FULLDATE="2022/08/07"
-export MELTLEVEL="4.7"
+# export MELTLEVEL="4.7"
 ./run_one.sh &
 
 export FULLDATE="2022/08/08"
