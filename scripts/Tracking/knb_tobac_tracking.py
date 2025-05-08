@@ -465,6 +465,7 @@ if __name__ == '__main__':
 
     
     print(args.Gauss_Smooth)
+    print(args.path)
     #NEXRAD
     if args.data_type == 'NEXRAD':
     
@@ -556,13 +557,13 @@ if __name__ == '__main__':
         #POLARRIS
         
     if args.data_type == 'POLARRIS':
-    
+        print(args.path)
         data = xr.open_mfdataset(args.path+'*.nc', engine = 'netcdf4',combine = 'nested' ,concat_dim='time')
         data['time'].encoding['units']="seconds since 2000-01-01 00:00:00"
-        files = sorted(glob(args.path+'*.nc'))
+        files = sorted(glob(args.path+'*grid.nc'))
         arr = []
         for i in files:
-            arr.append(pd.to_datetime(i[-19:-3], format = '%Y_%m%d_%H%M%S'))
+            arr.append(pd.to_datetime(i[-24:-8], format = '%Y_%m%d_%H%M%S'))#[-19:-3] when grid is at the beginning
         arr = pd.DatetimeIndex(arr)
         data = data.assign_coords(time=arr)
 
