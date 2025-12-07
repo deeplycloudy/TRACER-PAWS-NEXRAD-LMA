@@ -366,7 +366,7 @@ def track_polarimetry(summed_features,
 def open_track_timeseries_dataset(track_filename, timeseries_filename, reference_grid=None):
     # =======Load the tracks======
     
-    track_ds = xr.open_dataset(track_filename)
+    track_ds = xr.open_dataset(track_filename, decode_timedelta=True)
 
     # In the feature calculation script, the entity IDs need to be ints.
     for var in ['track', 'cell_parent_track_id', 'feature_parent_track_id', 'track_child_cell_count', 'cell_child_feature_count']:
@@ -536,7 +536,7 @@ def main(args):
     # Find tracks IDs with at least one feature within the specified range
     feature_in_range = (combo['feature_khgx_dist'] < (args.khgx_distance_km * 1000.0))
     reduced_track_ids = np.unique(combo[{'feature':feature_in_range}].feature_parent_track_id)
-    combo = traversal.reduce_to_entities('track', reduced_track_ids)
+    combo = traversal.reduce_to_entities('track', reduced_track_ids.astype(int))
 
     combo = add_track_durations(combo)
 
@@ -585,6 +585,12 @@ def main(args):
     track_membership, track_counts = track_polarimetry(summed_features, zdr_thresh=0.0, kdp_thresh=0.0, flash_thresh=0.0)
     
     subdivided_tracks = subdivide_tracks(combo, track_membership)
+    
+    # Save the track data, as a table one for each track.
+    for kind, (ds_sub, summed_features) in subdivided_tracks.items():
+        if not (summed_features is None):
+            summed_features.to_netcdf(os.path.join(args.outdir, "tracksummary_data_{1}_{0}.nc".format(meltlevel_string, kind.replace('_','-'))))
+    
 
     ### Start calculating stats.
     
