@@ -57,9 +57,9 @@ stationsmin = 6
 min_events_per_flash = 10
 
 # There is a parameter to change the gridding from the 1 min default time resolution.
-grid_time_delta_sec = 300 #60
+grid_time_delta_sec = 60 #60
 resolution_m = 500 #1000
-latlon_grid= False #True #False # False uses the stereographic coordinate grid.
+latlon_grid= True #True #False # False uses the stereographic coordinate grid.
 
 
 

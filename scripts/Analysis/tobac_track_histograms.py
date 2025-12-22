@@ -26,46 +26,17 @@ python tobac_track_histograms.py --trackpath='/efs/tracer/NEXRAD/tobac_Save_2022
                                  --distance=150.0
 """
 
-import linecache
+from glob import glob
 import os
-import tracemalloc
 
 
 def create_parser():
     parser = argparse.ArgumentParser(description=parse_desc)
     parser.add_argument(
-        "--referencegridpath",
-        metavar="referencegridpath",
+        "--main-path",
         required=True,
-        dest="referencegridpath",
         action="store",
-        help="path to a sample radar grid dataset containing projection information for the feature mask in the track dataset",
-    )
-    parser.add_argument(
-        "--timeseriespath",
-        metavar="timeseriespath",
-        required=True,
-        dest="timeseriespath",
-        action="store",
-        help="path to the timeseries dataset containing the polarimetry and lightning data along each tobac track",
-    )
-    parser.add_argument(
-        "--trackpath",
-        metavar="trackpath",
-        required=True,
-        dest="trackpath",
-        action="store",
-        help="path to the tobac track dataset",
-    )
-    parser.add_argument(
-        "-o",
-        "--output_path",
-        metavar="output path",
-        required=False,
-        dest="outdir",
-        action="store",
-        default=".",
-        help="path where the data will be saved",
+        help="tobac_Save subdir",
     )
     parser.add_argument(
         "--distance",
@@ -76,16 +47,6 @@ def create_parser():
         help="Maximum track distance from KHGX, in km. At least one feature in the track must be within range.",
         type=float
     )
-
-
-    # parser.add_argument(
-    #     "--type",
-    #     metavar="data type",
-    #     required=False,
-    #     dest="data_type",
-    #     action="store",
-    #     help="Data name type, e.g., NEXRAD, POLARRIS, NUWRF",
-    # )
     return parser
 
 
@@ -519,11 +480,14 @@ def percents_and_histos(summed_features, var_bins, percentiles):
 
 
 def main(args):
-
+    main_path = args.main_path
+    trackpath = os.path.join(main_path, 'Track_features_merges.nc')
+    timeseriespath = glob(f'{main_path}/timeseries_data_melt*.nc')[0]
+    referencegridpath = '/Volumes/LtgSSD/nexrad_zarr/JUNE/20220602/KHGX20220602_000522_V06_grid.zarr'
     combo = open_track_timeseries_dataset(
-        args.trackpath, args.timeseriespath, reference_grid=args.referencegridpath)
+        trackpath, timeseriespath, reference_grid=referencegridpath)
     
-    meltlevel_string = args.timeseriespath.split('_')[-1].replace('.nc', '')
+    meltlevel_string = timeseriespath.split('_')[-1].replace('.nc', '')
     
     # These first steps could be broken into their own script for preprocessing the timeseries dataset
     # to contain a certain subset of the tracks. The later sections are a uniform 
@@ -596,13 +560,12 @@ def main(args):
     
     pow2 = partial(pow, 2)
     powers_two = np.array([-1, 0] + list(map(pow2, range(25))) )+0.5
-
     # Values from the 4 June case, rounded to 40 x 40 km and one hour.
     mean_area = 1600.0 # combo.feature_area.mean().values
     mean_duration_sec = 3600.0 # combo.track_duration.mean().values.astype('timedelta64[s]').astype(float)
 
     # for the altitude-weighted variables, also normalize by the maximum magnitude of a weight.
-    alt_weight_max = 20000
+    alt_weight_max = 20000  * 1e-3
     
     var_bins= dict(
         feature_flash_count = ('Flash count', 
@@ -709,7 +672,6 @@ def main(args):
     for kind, (subset_ds, summed_features_subset) in subdivided_tracks.items():
         # print(kind)
         raw_var_histos, histo_ds, percentiles_out = percents_and_histos(summed_features_subset, var_bins, percentiles)
-    
         # Add a variable to show time coverage
         histo_ds['grid_time_start'] = combo.time.min()
         histo_ds['grid_time_end'] = combo.time.max()
@@ -733,7 +695,7 @@ def main(args):
         histo_ds = xr.combine_by_coords((histo_ds, percentile_ds, track_counts_out))
         histo_ds['track_maximum_distance_km'] = args.khgx_distance_km
 
-        histo_ds.to_netcdf(os.path.join(args.outdir, "histogram_data_{1}_{0}.nc".format(meltlevel_string, kind.replace('_','-'))))
+        histo_ds.to_netcdf(os.path.join(args.main_path, "histogram_data_{1}_{0}.nc".format(meltlevel_string, kind.replace('_','-'))))
     
 if __name__ == "__main__":
     parser = create_parser()
