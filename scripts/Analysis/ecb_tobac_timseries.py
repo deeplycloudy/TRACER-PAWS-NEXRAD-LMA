@@ -346,6 +346,46 @@ def load_cfradial_grids(file_list):
 
     return ds
 
+def zdr_correct(radar, melting_level):
+    """
+    Correct a radar's ZDR bias using snow particles.
+    Methods described by Wilson and VDB, 2020
+
+    Parameters
+    ----------
+    radar : pyart.core.Radar
+        The radar object to be corrected.
+    melting_level : float
+        The melting level of the environment in meters above radar level.
+
+    Returns
+    -------
+    zdr_ca : float
+        The calibrated ZDR bias to be applied to the radar, in dB. This value should be subtracted from the radar's ZDR field to correct it.
+    zdr_m : float
+        The mean ZDR value of the gates used for calibration, in dB. Ideally, this should be 0.15
+    calshape : int
+        The number of gates used for calibration.
+    """
+
+    # As described by Wilson and VDB, 2020, the calibration height is 1500m above the melting level.
+    h_cal = melting_level + 1500
+    radar_at_desired_level = radar.sel(z=h_cal, method="nearest")
+    # extract rhoHV and reflectivity to use for thresholding
+    cc_ungridded = radar_at_desired_level['cross_correlation_ratio'].compute().data
+    ref_ungridded = radar_at_desired_level['reflectivity'].compute().data
+
+    # Find ZDR gates that match rhoHV above 0.99 and reflectivity between 20 and 35 dBZ, within 250m of the calibration height
+    zdr_calib_mask = (ref_ungridded > 20) & (ref_ungridded < 35) & (cc_ungridded > 0.99)
+    calshape = np.sum(zdr_calib_mask)
+    zdr_c = radar_at_desired_level['differential_reflectivity'].compute().data.flatten()[zdr_calib_mask.flatten()]
+
+    #Get calibrations and raw means
+    zdr_m = np.nanmean(zdr_c)
+    zdr_ca = zdr_m - 0.15
+    
+    return zdr_ca, zdr_m, calshape
+
 def main(args):
     ###LOAD DATA
     lmafiles = sorted(glob(args.lmapath + "*.nc"))
@@ -387,6 +427,9 @@ def main(args):
 
     data = xr.open_mfdataset(path)
     data["time"].encoding["units"] = "seconds since 2000-01-01 00:00:00"
+    zdr_calib_offset, _, zdr_calib_N = zdr_correct(data, args.meltinglev*1000.0)
+    print(f'Applying ZDR calibration of {zdr_calib_offset:.2f} dB based on {zdr_calib_N} grid cells.')
+    data['differential_reflectivity'] = data['differential_reflectivity'] - zdr_calib_offset
     nc_grid = load_cfradial_grids(path)
     nclon = nc_grid["point_longitude"][0, :, :].data
     nclat = nc_grid["point_latitude"][0, :, :].data
